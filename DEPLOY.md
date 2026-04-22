@@ -1,42 +1,47 @@
 # Deploying Tank Game
 
+**Live URL:** https://mellifluous-platypus-26fca0.netlify.app  
+**GitHub:** https://github.com/zachrustick7/tank-game
+
 Hosted on **Netlify** (free tier). Every push to `main` on GitHub auto-deploys.
 
 ---
 
-## One-Time Setup
+## One-Time Setup (Already Done)
 
-### 1 — Create a GitHub repo
+### 1 — GitHub repo
 
-1. Go to https://github.com/new
-2. Name it `tank-game` (or anything you like)
-3. Keep it **Public**, leave all checkboxes blank, click **Create repository**
-4. Copy the HTTPS URL shown (e.g. `https://github.com/your-name/tank-game.git`)
+The repo is at https://github.com/zachrustick7/tank-game
 
-### 2 — Connect local repo to GitHub
+### 2 — Local repo connected to GitHub
 
-Run these in the project directory (`~/Desktop/games/tank-game`):
+The remote is already configured:
 
 ```bash
-git remote add origin https://github.com/YOUR_NAME/tank-game.git
-git add .
-git commit -m "initial commit"
-git push -u origin main
+git remote -v
+# origin  https://github.com/zachrustick7/tank-game.git (fetch)
+# origin  https://github.com/zachrustick7/tank-game.git (push)
 ```
 
-### 3 — Connect Netlify to GitHub
+### 3 — Connect Netlify to GitHub (for auto-deploys)
 
-1. Go to https://netlify.com and sign in (free account)
+To enable automatic deploys on every push:
+
+1. Go to https://app.netlify.com and sign in (free account)
 2. Click **Add new site → Import an existing project**
-3. Choose **GitHub** and authorise Netlify
-4. Select the `tank-game` repo
+3. Choose **GitHub** and authorize Netlify
+4. Select the `zachrustick7/tank-game` repo
 5. Build settings are auto-detected from `netlify.toml`:
    - **Publish directory:** `.`
    - **Build command:** *(empty)*
 6. Click **Deploy site**
 
-Netlify gives you a URL like `https://amazing-name-123.netlify.app`.
-You can rename it under **Site settings → Site name**.
+This connects your GitHub repo so pushes auto-deploy.
+
+**Alternative: Claim existing anonymous deploy**
+
+If you deployed via CLI (`npx netlify-cli deploy --prod --dir=. --allow-anonymous`), 
+claim the site within 60 minutes at the URL shown in the terminal output.
 
 ---
 

@@ -30,13 +30,22 @@ function loadImage(src) {
   });
 }
 
+// ─── Audio ────────────────────────────────────────────────────────────────────
+
+const introAudio = new Audio('assets/intro.m4a');
+introAudio.loop   = false;
+introAudio.volume = 0.8;
+
+// ─── Game state ───────────────────────────────────────────────────────────────
+
 const input  = new Input();
 const tank   = new Tank(WORLD_W / 2, WORLD_H / 2);
 const assets = {};
 let enemies  = [];
+let gameStarted = false;
 
-// Push overlapping entities apart using circle colliders.
-// Runs after all movement so no entity can end the frame inside another.
+// ─── Collision ────────────────────────────────────────────────────────────────
+
 function resolveCollisions(entities) {
   for (let i = 0; i < entities.length; i++) {
     for (let j = i + 1; j < entities.length; j++) {
@@ -59,10 +68,37 @@ function resolveCollisions(entities) {
   }
 }
 
-function drawGround(ctx) {
+// ─── Title screen ─────────────────────────────────────────────────────────────
+
+function drawTitleScreen() {
+  // Background
   ctx.fillStyle = COLORS.green[500];
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+
+  // Dark overlay panel
+  const pw = 500, ph = 220;
+  const px = (WORLD_W - pw) / 2;
+  const py = (WORLD_H - ph) / 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath();
+  ctx.roundRect(px, py, pw, ph, 12);
+  ctx.fill();
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.neutral.cream;
+  ctx.font = `bold 64px monospace`;
+  ctx.fillText('TANK GAME', WORLD_W / 2, py + 90);
+
+  // Subtitle
+  ctx.fillStyle = COLORS.sand[300];
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText('press any key to start', WORLD_W / 2, py + 150);
+
+  ctx.textAlign = 'left';
 }
+
+// ─── HUD ──────────────────────────────────────────────────────────────────────
 
 function drawHUD(ctx) {
   ctx.save();
@@ -76,41 +112,27 @@ function drawHUD(ctx) {
   ctx.restore();
 }
 
-let lastTime = null;
+// ─── Ground ───────────────────────────────────────────────────────────────────
 
-async function init() {
-  const [body, barrel] = await Promise.all([
-    loadImage('assets/tank_body.png'),
-    loadImage('assets/tank_barrel.png'),
-  ]);
-
-  // Player sprites
-  assets.tankBody   = tintSprite(body,   COLORS.tank.green);
-  assets.tankBarrel = tintSprite(barrel, COLORS.tank.green);
-
-  // Enemy sprites — one tinted set per role, keyed by role name
-  assets.enemies = {};
-  for (const [role, cfg] of Object.entries(ENEMY_CONFIGS)) {
-    assets.enemies[role] = {
-      body:   tintSprite(body,   cfg.color),
-      barrel: tintSprite(barrel, cfg.color),
-    };
-  }
-
-  // Spawn one of each role at different positions
-  enemies = [
-    new Enemy(200, 160,  ENEMY_CONFIGS.chaser),
-    new Enemy(950, 150,  ENEMY_CONFIGS.sniper),
-    new Enemy(150, 580,  ENEMY_CONFIGS.flanker),
-  ];
-
-  requestAnimationFrame(loop);
+function drawGround(ctx) {
+  ctx.fillStyle = COLORS.green[500];
+  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
 }
+
+// ─── Game loop ────────────────────────────────────────────────────────────────
+
+let lastTime = null;
 
 function loop(timestamp) {
   if (!lastTime) lastTime = timestamp;
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
+
+  if (!gameStarted) {
+    drawTitleScreen();
+    requestAnimationFrame(loop);
+    return;
+  }
 
   tank.update(dt, input);
   input.clearPressed();
@@ -122,13 +144,47 @@ function loop(timestamp) {
   for (const enemy of enemies) enemy.update(dt, tank, enemies);
   resolveCollisions([tank, ...enemies]);
 
-  // Draw order: ground → tracks → tanks → HUD
   drawGround(ctx);
   tank.drawTracks(ctx);
   for (const enemy of enemies) enemy.drawTracks(ctx);
   tank.draw(ctx, assets);
   for (const enemy of enemies) enemy.draw(ctx, assets);
   drawHUD(ctx);
+
+  requestAnimationFrame(loop);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+async function init() {
+  const [body, barrel] = await Promise.all([
+    loadImage('assets/tank_body.png'),
+    loadImage('assets/tank_barrel.png'),
+  ]);
+
+  assets.tankBody   = tintSprite(body,   COLORS.tank.green);
+  assets.tankBarrel = tintSprite(barrel, COLORS.tank.green);
+
+  assets.enemies = {};
+  for (const [role, cfg] of Object.entries(ENEMY_CONFIGS)) {
+    assets.enemies[role] = {
+      body:   tintSprite(body,   cfg.color),
+      barrel: tintSprite(barrel, cfg.color),
+    };
+  }
+
+  enemies = [
+    new Enemy(200, 160, ENEMY_CONFIGS.chaser),
+    new Enemy(950, 150, ENEMY_CONFIGS.sniper),
+    new Enemy(150, 580, ENEMY_CONFIGS.flanker),
+  ];
+
+  // Any key starts the game and plays the intro track
+  window.addEventListener('keydown', () => {
+    if (gameStarted) return;
+    gameStarted = true;
+    introAudio.play().catch(() => {}); // catch in case file isn't there yet
+  }, { once: true });
 
   requestAnimationFrame(loop);
 }
