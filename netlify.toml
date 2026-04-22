@@ -1,0 +1,8 @@
+[build]
+  publish = "."
+  command = ""   # no build step — vanilla JS, serve as-is
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "no-cache"   # always serve latest on reload
