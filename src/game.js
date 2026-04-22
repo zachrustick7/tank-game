@@ -5,6 +5,7 @@ import { ENEMY_CONFIGS } from './ai/enemyConfig.js';
 import { WORLD_W, WORLD_H } from './config.js';
 import { tintSprite } from './sprite.js';
 import { COLORS } from './colors.js';
+import { loadSounds } from './audio.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
@@ -183,7 +184,8 @@ async function init() {
   window.addEventListener('keydown', () => {
     if (gameStarted) return;
     gameStarted = true;
-    introAudio.play().catch(() => {}); // catch in case file isn't there yet
+    loadSounds();
+    introAudio.play().catch(() => {});
   }, { once: true });
 
   requestAnimationFrame(loop);

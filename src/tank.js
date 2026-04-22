@@ -6,6 +6,7 @@ import {
   RECOIL_AMOUNT, RECOIL_RETURN,
 } from './config.js';
 import { COLORS } from './colors.js';
+import { playSound } from './audio.js';
 
 // Side offset of each tread from tank center (px)
 const TRACK_SIDE = 11;
@@ -69,7 +70,10 @@ export class Tank {
     if (input.held('ArrowLeft'))  this.barrelOffset -= BARREL_ROTATE_SPEED * dt;
     if (input.held('ArrowRight')) this.barrelOffset += BARREL_ROTATE_SPEED * dt;
 
+    const wasReloading = this.fireCooldown > 0;
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    if (wasReloading && this.fireCooldown === 0) playSound('reload');
+
     if ((input.held('ArrowUp') || input.held('Space')) && this.fireCooldown === 0) {
       this._fire();
       this.fireCooldown = FIRE_COOLDOWN;
@@ -88,6 +92,7 @@ export class Tank {
     const sy = mountY + Math.sin(worldBarrelAngle) * tipDist;
     this.shells.push(new Shell(sx, sy, worldBarrelAngle, SHELL_SPEED));
     this._recoil = RECOIL_AMOUNT;
+    playSound('shoot');
   }
 
   drawTracks(ctx) {

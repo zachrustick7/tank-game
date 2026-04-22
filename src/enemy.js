@@ -6,6 +6,7 @@ import {
   SHELL_SPEED,
 } from './config.js';
 import { COLORS } from './colors.js';
+import { playSound } from './audio.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -308,6 +309,7 @@ export class Enemy {
         if (this._cooldownTimer <= 0) {
           this._phase    = PHASE.AIMING;
           this._aimTimer = cfg.attack.aimTime;
+          playSound('reload');
         }
         break;
       }
@@ -322,6 +324,7 @@ export class Enemy {
     const sy = mountY + Math.sin(angle) * tipDist;
     this.shells.push(new Shell(sx, sy, angle, SHELL_SPEED));
     this._recoil = RECOIL_AMOUNT;
+    playSound('shoot');
   }
 
   // ─── Draw ─────────────────────────────────────────────────────────────────
