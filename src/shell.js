@@ -1,15 +1,23 @@
 import { SHELL_RADIUS, SHELL_TRAIL } from './config.js';
 import { COLORS } from './colors.js';
+import { LAYER } from './physics/collision.js';
+import { IMPACT } from './config.js';
 
 export class Shell {
-  constructor(x, y, angle, speed) {
-    this.x = x;
-    this.y = y;
+  constructor(x, y, angle, speed,
+              layer         = LAYER.PLAYER_SHELL,
+              impactProfile = IMPACT.standard) {
+    this.x     = x;
+    this.y     = y;
     this.angle = angle;
     this.speed = speed;
-    this.dead = false;
+    this.dead  = false;
     this.radius = SHELL_RADIUS;
-    this.trail = [];
+    this.trail  = [];
+
+    this.layer         = layer;
+    this.impactProfile = impactProfile;
+    this.piercesLeft   = impactProfile.pierceCount ?? 0;
   }
 
   update(dt, worldW, worldH) {

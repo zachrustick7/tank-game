@@ -2,10 +2,11 @@ import { Input } from './input.js';
 import { Tank } from './tank.js';
 import { Enemy } from './enemy.js';
 import { ENEMY_CONFIGS } from './ai/enemyConfig.js';
-import { WORLD_W, WORLD_H } from './config.js';
+import { WORLD_W, WORLD_H, VOL_INTRO, PLAYER_HP } from './config.js';
 import { tintSprite } from './sprite.js';
 import { COLORS } from './colors.js';
 import { loadSounds } from './audio.js';
+import { resolveProjectileHits } from './physics/collision.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
@@ -31,23 +32,124 @@ function loadImage(src) {
   });
 }
 
+// ─── Levels ───────────────────────────────────────────────────────────────────
+
+const ISLAND_HALF = 250;
+const ISLAND_R    = 20;
+const SHORE_PAD   = 30;
+
+const COR_W  = Math.round(ISLAND_HALF * 2 * 1.5); // 750  — 1.5× island width
+const COR_H  = ISLAND_HALF * 2 * 2.5;             // 1250 — 2.5× island height
+const COR_X  = (WORLD_W - COR_W) / 2;             // 225  — left edge of corridor
+const LEVELS = [
+  {
+    id:          'training',
+    name:        'Training Ground',
+    description: ['Single target. Practice your aim.', 'No enemies will fire back.'],
+    width:  WORLD_W,
+    height: WORLD_H,
+    playerSpawn: { x: WORLD_W / 2, y: WORLD_H / 2 },
+    bounds: {
+      minX: WORLD_W / 2 - ISLAND_HALF,
+      maxX: WORLD_W / 2 + ISLAND_HALF,
+      minY: WORLD_H / 2 - ISLAND_HALF,
+      maxY: WORLD_H / 2 + ISLAND_HALF,
+    },
+    drawBackground(ctx) {
+      const cx = WORLD_W / 2, cy = WORLD_H / 2;
+      const s  = ISLAND_HALF, sp = s + SHORE_PAD;
+      ctx.fillStyle = COLORS.extended.blueDark;
+      ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+      ctx.fillStyle = COLORS.sand[300];
+      ctx.beginPath();
+      ctx.roundRect(cx - sp, cy - sp, sp * 2, sp * 2, ISLAND_R + SHORE_PAD);
+      ctx.fill();
+      ctx.fillStyle = COLORS.green[500];
+      ctx.beginPath();
+      ctx.roundRect(cx - s, cy - s, s * 2, s * 2, ISLAND_R);
+      ctx.fill();
+    },
+    spawn: () => [
+      new Enemy(WORLD_W / 2 + 160, WORLD_H / 2 - 60, ENEMY_CONFIGS.infantry),
+    ],
+  },
+
+  {
+    id:          'level1',
+    name:        'Level 1',
+    description: ['10 enemies.', 'Push through to the end.'],
+    width:     WORLD_W,
+    height:    COR_H,
+    cameraPad: 80,
+    playerSpawn: { x: WORLD_W / 2, y: COR_H - 120 },
+    bounds: {
+      minX: COR_X,
+      maxX: COR_X + COR_W,
+      minY: 0,
+      maxY: COR_H,
+    },
+    drawBackground(ctx) {
+      const cx = WORLD_W / 2;
+      const sp = COR_W / 2 + SHORE_PAD;
+      ctx.fillStyle = COLORS.extended.blueDark;
+      ctx.fillRect(0, -200, WORLD_W, COR_H + 400);
+      ctx.fillStyle = COLORS.sand[300];
+      ctx.beginPath();
+      ctx.roundRect(cx - sp, -SHORE_PAD, sp * 2, COR_H + SHORE_PAD * 2, ISLAND_R + SHORE_PAD);
+      ctx.fill();
+      ctx.fillStyle = COLORS.green[500];
+      ctx.beginPath();
+      ctx.roundRect(COR_X, 0, COR_W, COR_H, ISLAND_R);
+      ctx.fill();
+    },
+    spawn: () => {
+      const cx = WORLD_W / 2;
+      return [
+        // ── Wave 1 — 1 tank ───────────────────────────────────────────────
+        new Enemy(cx,              COR_H - 680,  ENEMY_CONFIGS.infantry),
+
+        // ── Wave 2 — 2 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 140,        COR_H - 860,  ENEMY_CONFIGS.infantry),
+        new Enemy(cx + 140,        COR_H - 860,  ENEMY_CONFIGS.torcher),
+
+        // ── Wave 3 — 4 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 250,        COR_H - 1040, ENEMY_CONFIGS.flanker),
+        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.infantry),
+        new Enemy(cx + 80,         COR_H - 1040, ENEMY_CONFIGS.torcher),
+        new Enemy(cx + 250,        COR_H - 1040, ENEMY_CONFIGS.flanker),
+
+        // ── Wave 4 — 3 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.flanker),
+        new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.torcher),
+        new Enemy(cx + 200,        COR_H - 1160, ENEMY_CONFIGS.flanker),
+      ];
+    },
+  },
+];
+
 // ─── Audio ────────────────────────────────────────────────────────────────────
 
 const introAudio = new Audio('assets/intro.m4a');
 introAudio.loop   = false;
-introAudio.volume = 0.8;
+introAudio.volume = VOL_INTRO;
 
 // ─── Game state ───────────────────────────────────────────────────────────────
 
+// Screens: 'title' → 'level_select' → 'playing' → 'dead'
+let screen        = 'title';
+let selectedLevel = 0;
+let activeLevel   = null;
+let musicMuted    = false;
+
 const input  = new Input();
-const tank   = new Tank(WORLD_W / 2, WORLD_H / 2);
+let tank     = new Tank(WORLD_W / 2, WORLD_H / 2);
 const assets = {};
 let enemies  = [];
-let gameStarted = false;
+let camera   = { x: 0, y: 0 };
 
-// ─── Collision ────────────────────────────────────────────────────────────────
+// ─── Body collision resolution ────────────────────────────────────────────────
 
-function resolveCollisions(entities) {
+function resolveBodyCollisions(entities) {
   for (let i = 0; i < entities.length; i++) {
     for (let j = i + 1; j < entities.length; j++) {
       const a  = entities[i];
@@ -69,40 +171,130 @@ function resolveCollisions(entities) {
   }
 }
 
-// ─── Title screen ─────────────────────────────────────────────────────────────
+// ─── Projectile collision pass ────────────────────────────────────────────────
 
-function drawTitleScreen() {
-  // Background
+function processProjectileHits() {
+  // Player shells → enemies
+  resolveProjectileHits(tank.shells, enemies);
+
+  // Enemy shells → player  (flat array across all enemies)
+  const enemyShells = enemies.flatMap(e => e.shells);
+  resolveProjectileHits(enemyShells, [tank]);
+}
+
+// ─── Camera ───────────────────────────────────────────────────────────────────
+
+function updateCamera() {
+  const lw  = activeLevel?.width     ?? WORLD_W;
+  const lh  = activeLevel?.height    ?? WORLD_H;
+  const pad = activeLevel?.cameraPad ?? 0;
+  camera.x = Math.max(-pad, Math.min(tank.x - WORLD_W / 2, lw - WORLD_W + pad));
+  camera.y = Math.max(-pad, Math.min(tank.y - WORLD_H / 2, lh - WORLD_H + pad));
+}
+
+// ─── Start a level ────────────────────────────────────────────────────────────
+
+function startLevel(index) {
+  const lvl   = LEVELS[index];
+  activeLevel = lvl;
+  const spawn = lvl.playerSpawn ?? { x: WORLD_W / 2, y: WORLD_H / 2 };
+  tank        = new Tank(spawn.x, spawn.y);
+  camera      = { x: 0, y: 0 };
+  enemies     = lvl.spawn();
+  screen      = 'playing';
+}
+
+// ─── Draw: title ──────────────────────────────────────────────────────────────
+
+function drawTitle() {
   ctx.fillStyle = COLORS.green[500];
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
 
-  // Dark overlay panel
   const pw = 500, ph = 220;
   const px = (WORLD_W - pw) / 2;
   const py = (WORLD_H - ph) / 2;
+
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.beginPath();
   ctx.roundRect(px, py, pw, ph, 12);
   ctx.fill();
 
-  // Title
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.neutral.cream;
-  ctx.font = `bold 64px monospace`;
+  ctx.font = 'bold 64px monospace';
   ctx.fillText('TANK GAME', WORLD_W / 2, py + 90);
 
-  // Subtitle
   ctx.fillStyle = COLORS.sand[300];
   ctx.font = 'bold 18px monospace';
-  ctx.fillText('press any key to start', WORLD_W / 2, py + 150);
+  ctx.fillText('press any key to continue', WORLD_W / 2, py + 150);
 
   ctx.textAlign = 'left';
+  drawMusicToggle();
 }
 
-// ─── HUD ──────────────────────────────────────────────────────────────────────
+// ─── Draw: level select ───────────────────────────────────────────────────────
 
-function drawHUD(ctx) {
+function drawLevelSelect() {
+  ctx.fillStyle = COLORS.green[500];
+  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.neutral.cream;
+  ctx.font = 'bold 28px monospace';
+  ctx.fillText('SELECT LEVEL', WORLD_W / 2, 120);
+
+  const cardW = 380, cardH = 160;
+  const cardX = (WORLD_W - cardW) / 2;
+  const cardY = 180;
+  const gap   = 180;
+
+  LEVELS.forEach((lvl, i) => {
+    const cy         = cardY + i * gap;
+    const isSelected = i === selectedLevel;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.roundRect(cardX + 4, cy + 4, cardW, cardH, 10);
+    ctx.fill();
+
+    ctx.fillStyle = isSelected ? COLORS.green[400] : COLORS.green[500];
+    ctx.beginPath();
+    ctx.roundRect(cardX, cy, cardW, cardH, 10);
+    ctx.fill();
+
+    if (isSelected) {
+      ctx.strokeStyle = COLORS.accent.gold;
+      ctx.lineWidth   = 3;
+      ctx.beginPath();
+      ctx.roundRect(cardX, cy, cardW, cardH, 10);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = COLORS.neutral.cream;
+    ctx.font      = 'bold 26px monospace';
+    ctx.fillText(lvl.name, WORLD_W / 2, cy + 44);
+
+    ctx.fillStyle = COLORS.sand[300];
+    ctx.font      = '15px monospace';
+    lvl.description.forEach((line, li) => {
+      ctx.fillText(line, WORLD_W / 2, cy + 78 + li * 22);
+    });
+  });
+
+  ctx.fillStyle = COLORS.accent.gold;
+  ctx.font      = 'bold 16px monospace';
+  ctx.fillText('press ENTER to play', WORLD_W / 2, cardY + LEVELS.length * gap + 20);
+
+  ctx.textAlign = 'left';
+  drawMusicToggle();
+}
+
+// ─── Draw: HUD ────────────────────────────────────────────────────────────────
+
+function drawHUD() {
   ctx.save();
+
+  // Controls panel
   ctx.fillStyle = COLORS.ui.panel + 'cc';
   ctx.fillRect(10, 10, 210, 70);
   ctx.fillStyle = COLORS.neutral.dark;
@@ -110,14 +302,100 @@ function drawHUD(ctx) {
   ctx.fillText('WASD — move / rotate body', 20, 30);
   ctx.fillText('← → — rotate barrel', 20, 48);
   ctx.fillText('↑ / SPACE — fire', 20, 66);
+
+  // Player HP bar
+  const barX = 10, barY = 88, barW = 210, barH = 12;
+  ctx.fillStyle = COLORS.ui.health.background;
+  ctx.fillRect(barX, barY, barW, barH);
+
+  const frac  = tank.hp / PLAYER_HP;
+  const hpColor = frac > 0.5 ? COLORS.ui.health.full
+                : frac > 0.25 ? COLORS.ui.health.mid
+                : COLORS.ui.health.low;
+  ctx.fillStyle = hpColor;
+  ctx.fillRect(barX, barY, barW * frac, barH);
+
+  ctx.fillStyle = COLORS.neutral.dark;
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText(`HP  ${tank.hp} / ${PLAYER_HP}`, barX + 4, barY + 9);
+
   ctx.restore();
 }
 
-// ─── Ground ───────────────────────────────────────────────────────────────────
+// ─── Draw: death overlay ──────────────────────────────────────────────────────
 
-function drawGround(ctx) {
+function drawDeadScreen() {
+  if (activeLevel?.drawBackground) activeLevel.drawBackground(ctx);
+  else drawGround();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.effects.damage;
+  ctx.font = 'bold 58px monospace';
+  ctx.fillText('YOU WERE DESTROYED', WORLD_W / 2, WORLD_H / 2 - 20);
+
+  ctx.fillStyle = COLORS.sand[300];
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText('press any key to return', WORLD_W / 2, WORLD_H / 2 + 44);
+
+  ctx.textAlign = 'left';
+  drawMusicToggle();
+}
+
+// ─── Draw: ground ─────────────────────────────────────────────────────────────
+
+function drawGround() {
   ctx.fillStyle = COLORS.green[500];
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+}
+
+// ─── Draw: music toggle ───────────────────────────────────────────────────────
+
+const MUSIC_BTN = { x: WORLD_W - 52, y: 12, size: 36 };
+
+function drawMusicToggle() {
+  const { x, y, size } = MUSIC_BTN;
+  const cx = x + size / 2, cy = y + size / 2;
+  ctx.save();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = musicMuted ? COLORS.neutral.mid : COLORS.neutral.cream;
+  ctx.font = `${Math.round(size * 0.55)}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('♫', cx, cy + 1);
+
+  if (musicMuted) {
+    ctx.strokeStyle = COLORS.effects.damage;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + 6);
+    ctx.lineTo(x + size - 6, y + size - 6);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// ─── Input handlers ───────────────────────────────────────────────────────────
+
+function handleTitleKey() {
+  screen = 'level_select';
+  loadSounds();
+  introAudio.play().catch(() => {});
+}
+
+function handleLevelSelectKey(e) {
+  if (e.code === 'ArrowUp')   selectedLevel = Math.max(0, selectedLevel - 1);
+  if (e.code === 'ArrowDown') selectedLevel = Math.min(LEVELS.length - 1, selectedLevel + 1);
+  if (e.code === 'Enter' || e.code === 'Space') startLevel(selectedLevel);
 }
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
@@ -129,28 +407,81 @@ function loop(timestamp) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
 
-  if (!gameStarted) {
-    drawTitleScreen();
+  if (screen === 'title') {
+    drawTitle();
     requestAnimationFrame(loop);
     return;
   }
 
+  if (screen === 'level_select') {
+    drawLevelSelect();
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  if (screen === 'dead') {
+    drawDeadScreen();
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  // ── Update ──────────────────────────────────────────────────────────────
+
   tank.update(dt, input);
   input.clearPressed();
 
+  // Clamp player to level bounds
+  const b  = activeLevel?.bounds ?? { minX: 0, maxX: WORLD_W, minY: 0, maxY: WORLD_H };
   const hw = tank.bodyW / 2, hh = tank.bodyH / 2;
-  tank.x = Math.max(hw, Math.min(WORLD_W - hw, tank.x));
-  tank.y = Math.max(hh, Math.min(WORLD_H - hh, tank.y));
+  tank.x = Math.max(b.minX + hw, Math.min(b.maxX - hw, tank.x));
+  tank.y = Math.max(b.minY + hh, Math.min(b.maxY - hh, tank.y));
 
   for (const enemy of enemies) enemy.update(dt, tank, enemies);
-  resolveCollisions([tank, ...enemies]);
 
-  drawGround(ctx);
+  // Clamp all enemies to level bounds (locomotion + impulse both land here)
+  for (const enemy of enemies) {
+    const er = enemy.collisionRadius;
+    enemy.x = Math.max(b.minX + er, Math.min(b.maxX - er, enemy.x));
+    enemy.y = Math.max(b.minY + er, Math.min(b.maxY - er, enemy.y));
+  }
+
+  // Projectile hit resolution — applies damage + impulse, marks shells dead
+  processProjectileHits();
+
+  // Remove enemies whose death animation has fully completed
+  enemies = enemies.filter(e => !e._done);
+
+  // Transition to death screen
+  if (!tank.alive) { screen = 'dead'; requestAnimationFrame(loop); return; }
+
+  // Body overlap resolution
+  resolveBodyCollisions([tank, ...enemies]);
+
+  // ── Draw ────────────────────────────────────────────────────────────────
+
+  updateCamera();
+
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
+
+  if (activeLevel?.drawBackground) activeLevel.drawBackground(ctx);
+  else drawGround();
+
   tank.drawTracks(ctx);
   for (const enemy of enemies) enemy.drawTracks(ctx);
   tank.draw(ctx, assets);
   for (const enemy of enemies) enemy.draw(ctx, assets);
-  drawHUD(ctx);
+
+  ctx.restore();
+
+  drawHUD();
+  drawMusicToggle();
+
+  // Hit flash overlay — drawn last so it sits on top of everything
+  if (tank._hitFlash > 0) {
+    ctx.fillStyle = `rgba(220,50,50,${(tank._hitFlash / 0.25) * 0.30})`;
+    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+  }
 
   requestAnimationFrame(loop);
 }
@@ -169,24 +500,28 @@ async function init() {
   assets.enemies = {};
   for (const [role, cfg] of Object.entries(ENEMY_CONFIGS)) {
     assets.enemies[role] = {
-      body:   tintSprite(body,   cfg.color),
-      barrel: tintSprite(barrel, cfg.color),
+      body:    tintSprite(body,   cfg.color),
+      barrel:  tintSprite(barrel, cfg.color),
+      charred: tintSprite(body,   COLORS.neutral.charcoal),
     };
   }
 
-  enemies = [
-    new Enemy(200, 160, ENEMY_CONFIGS.chaser),
-    new Enemy(950, 150, ENEMY_CONFIGS.sniper),
-    new Enemy(150, 580, ENEMY_CONFIGS.flanker),
-  ];
+  window.addEventListener('keydown', e => {
+    if (screen === 'title')        { handleTitleKey(); return; }
+    if (screen === 'level_select') { handleLevelSelectKey(e); return; }
+    if (screen === 'dead')         { screen = 'title'; return; }
+  });
 
-  // Any key starts the game and plays the intro track
-  window.addEventListener('keydown', () => {
-    if (gameStarted) return;
-    gameStarted = true;
-    loadSounds();
-    introAudio.play().catch(() => {});
-  }, { once: true });
+  canvas.addEventListener('click', e => {
+    const rect  = canvas.getBoundingClientRect();
+    const cx    = (e.clientX - rect.left) * (WORLD_W / rect.width);
+    const cy    = (e.clientY - rect.top)  * (WORLD_H / rect.height);
+    const btn   = MUSIC_BTN;
+    if (cx >= btn.x && cx <= btn.x + btn.size && cy >= btn.y && cy <= btn.y + btn.size) {
+      musicMuted = !musicMuted;
+      introAudio.muted = musicMuted;
+    }
+  });
 
   requestAnimationFrame(loop);
 }
