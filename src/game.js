@@ -5,7 +5,7 @@ import { ENEMY_CONFIGS } from './ai/enemyConfig.js';
 import { WORLD_W, WORLD_H, VOL_INTRO, PLAYER_HP } from './config.js';
 import { tintSprite } from './sprite.js';
 import { COLORS } from './colors.js';
-import { loadSounds } from './audio.js';
+import { loadSounds, setSoundMuted } from './audio.js';
 import { resolveProjectileHits } from './physics/collision.js';
 
 const canvas = document.getElementById('gameCanvas');
@@ -41,6 +41,29 @@ const SHORE_PAD   = 30;
 const COR_W  = Math.round(ISLAND_HALF * 2 * 1.5); // 750  — 1.5× island width
 const COR_H  = ISLAND_HALF * 2 * 2.5;             // 1250 — 2.5× island height
 const COR_X  = (WORLD_W - COR_W) / 2;             // 225  — left edge of corridor
+
+function drawCorridorBg(ctx) {
+  const cx = WORLD_W / 2;
+  const sp = COR_W / 2 + SHORE_PAD;
+  ctx.fillStyle = COLORS.extended.blueDark;
+  ctx.fillRect(0, -200, WORLD_W, COR_H + 400);
+  ctx.fillStyle = COLORS.sand[300];
+  ctx.beginPath();
+  ctx.roundRect(cx - sp, -SHORE_PAD, sp * 2, COR_H + SHORE_PAD * 2, ISLAND_R + SHORE_PAD);
+  ctx.fill();
+  ctx.fillStyle = COLORS.green[500];
+  ctx.beginPath();
+  ctx.roundRect(COR_X, 0, COR_W, COR_H, ISLAND_R);
+  ctx.fill();
+}
+
+const CORRIDOR_BOUNDS = {
+  minX: COR_X,
+  maxX: COR_X + COR_W,
+  minY: 0,
+  maxY: COR_H,
+};
+
 const LEVELS = [
   {
     id:          'training',
@@ -78,30 +101,12 @@ const LEVELS = [
     id:          'level1',
     name:        'Level 1',
     description: ['10 enemies.', 'Push through to the end.'],
-    width:     WORLD_W,
-    height:    COR_H,
-    cameraPad: 80,
+    width:       WORLD_W,
+    height:      COR_H,
+    cameraPad:   80,
     playerSpawn: { x: WORLD_W / 2, y: COR_H - 120 },
-    bounds: {
-      minX: COR_X,
-      maxX: COR_X + COR_W,
-      minY: 0,
-      maxY: COR_H,
-    },
-    drawBackground(ctx) {
-      const cx = WORLD_W / 2;
-      const sp = COR_W / 2 + SHORE_PAD;
-      ctx.fillStyle = COLORS.extended.blueDark;
-      ctx.fillRect(0, -200, WORLD_W, COR_H + 400);
-      ctx.fillStyle = COLORS.sand[300];
-      ctx.beginPath();
-      ctx.roundRect(cx - sp, -SHORE_PAD, sp * 2, COR_H + SHORE_PAD * 2, ISLAND_R + SHORE_PAD);
-      ctx.fill();
-      ctx.fillStyle = COLORS.green[500];
-      ctx.beginPath();
-      ctx.roundRect(COR_X, 0, COR_W, COR_H, ISLAND_R);
-      ctx.fill();
-    },
+    bounds:      CORRIDOR_BOUNDS,
+    drawBackground: drawCorridorBg,
     spawn: () => {
       const cx = WORLD_W / 2;
       return [
@@ -125,6 +130,40 @@ const LEVELS = [
       ];
     },
   },
+
+  {
+    id:          'level2',
+    name:        'Level 2',
+    description: ['Sprayers everywhere.', 'No safe angle.'],
+    width:       WORLD_W,
+    height:      COR_H,
+    cameraPad:   80,
+    playerSpawn: { x: WORLD_W / 2, y: COR_H - 120 },
+    bounds:      CORRIDOR_BOUNDS,
+    drawBackground: drawCorridorBg,
+    spawn: () => {
+      const cx = WORLD_W / 2;
+      return [
+        // ── Wave 1 — 1 tank ───────────────────────────────────────────────
+        new Enemy(cx,              COR_H - 680,  ENEMY_CONFIGS.sprayer),
+
+        // ── Wave 2 — 2 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 140,        COR_H - 860,  ENEMY_CONFIGS.sprayer),
+        new Enemy(cx + 140,        COR_H - 860,  ENEMY_CONFIGS.torcher),
+
+        // ── Wave 3 — 4 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 260,        COR_H - 1040, ENEMY_CONFIGS.sprayer),
+        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.flanker),
+        new Enemy(cx + 80,         COR_H - 1040, ENEMY_CONFIGS.flanker),
+        new Enemy(cx + 260,        COR_H - 1040, ENEMY_CONFIGS.sprayer),
+
+        // ── Wave 4 — 3 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.sprayer),
+        new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.sprayer),
+        new Enemy(cx + 200,        COR_H - 1160, ENEMY_CONFIGS.infantry),
+      ];
+    },
+  },
 ];
 
 // ─── Audio ────────────────────────────────────────────────────────────────────
@@ -132,6 +171,7 @@ const LEVELS = [
 const introAudio = new Audio('assets/intro.m4a');
 introAudio.loop   = false;
 introAudio.volume = VOL_INTRO;
+introAudio.muted  = true; // sound off by default
 
 // ─── Game state ───────────────────────────────────────────────────────────────
 
@@ -139,7 +179,7 @@ introAudio.volume = VOL_INTRO;
 let screen        = 'title';
 let selectedLevel = 0;
 let activeLevel   = null;
-let musicMuted    = false;
+let soundMuted    = true;
 
 const input  = new Input();
 let tank     = new Tank(WORLD_W / 2, WORLD_H / 2);
@@ -229,7 +269,7 @@ function drawTitle() {
   ctx.fillText('press any key to continue', WORLD_W / 2, py + 150);
 
   ctx.textAlign = 'left';
-  drawMusicToggle();
+  drawSoundToggle();
 }
 
 // ─── Draw: level select ───────────────────────────────────────────────────────
@@ -286,7 +326,7 @@ function drawLevelSelect() {
   ctx.fillText('press ENTER to play', WORLD_W / 2, cardY + LEVELS.length * gap + 20);
 
   ctx.textAlign = 'left';
-  drawMusicToggle();
+  drawSoundToggle();
 }
 
 // ─── Draw: HUD ────────────────────────────────────────────────────────────────
@@ -341,7 +381,7 @@ function drawDeadScreen() {
   ctx.fillText('press any key to return', WORLD_W / 2, WORLD_H / 2 + 44);
 
   ctx.textAlign = 'left';
-  drawMusicToggle();
+  drawSoundToggle();
 }
 
 // ─── Draw: ground ─────────────────────────────────────────────────────────────
@@ -353,10 +393,10 @@ function drawGround() {
 
 // ─── Draw: music toggle ───────────────────────────────────────────────────────
 
-const MUSIC_BTN = { x: WORLD_W - 52, y: 12, size: 36 };
+const SOUND_BTN = { x: WORLD_W - 52, y: 12, size: 36 };
 
-function drawMusicToggle() {
-  const { x, y, size } = MUSIC_BTN;
+function drawSoundToggle() {
+  const { x, y, size } = SOUND_BTN;
   const cx = x + size / 2, cy = y + size / 2;
   ctx.save();
 
@@ -365,13 +405,13 @@ function drawMusicToggle() {
   ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = musicMuted ? COLORS.neutral.mid : COLORS.neutral.cream;
+  ctx.fillStyle = soundMuted ? COLORS.neutral.mid : COLORS.neutral.cream;
   ctx.font = `${Math.round(size * 0.55)}px serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('♫', cx, cy + 1);
 
-  if (musicMuted) {
+  if (soundMuted) {
     ctx.strokeStyle = COLORS.effects.damage;
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
@@ -389,6 +429,7 @@ function drawMusicToggle() {
 function handleTitleKey() {
   screen = 'level_select';
   loadSounds();
+  setSoundMuted(soundMuted); // sync mute state into audio module on first load
   introAudio.play().catch(() => {});
 }
 
@@ -475,7 +516,7 @@ function loop(timestamp) {
   ctx.restore();
 
   drawHUD();
-  drawMusicToggle();
+  drawSoundToggle();
 
   // Hit flash overlay — drawn last so it sits on top of everything
   if (tank._hitFlash > 0) {
@@ -489,9 +530,10 @@ function loop(timestamp) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
-  const [body, barrel] = await Promise.all([
+  const [body, barrel, octaBarrel] = await Promise.all([
     loadImage('assets/tank_body.png'),
     loadImage('assets/tank_barrel.png'),
+    loadImage('assets/tank_octa_barrel.png'),
   ]);
 
   assets.tankBody   = tintSprite(body,   COLORS.tank.green);
@@ -499,10 +541,11 @@ async function init() {
 
   assets.enemies = {};
   for (const [role, cfg] of Object.entries(ENEMY_CONFIGS)) {
+    const barrelSrc = role === 'sprayer' ? octaBarrel : barrel;
     assets.enemies[role] = {
-      body:    tintSprite(body,   cfg.color),
-      barrel:  tintSprite(barrel, cfg.color),
-      charred: tintSprite(body,   COLORS.neutral.charcoal),
+      body:    tintSprite(body,      cfg.color),
+      barrel:  tintSprite(barrelSrc, cfg.color),
+      charred: tintSprite(body,      COLORS.neutral.charcoal),
     };
   }
 
@@ -513,13 +556,14 @@ async function init() {
   });
 
   canvas.addEventListener('click', e => {
-    const rect  = canvas.getBoundingClientRect();
-    const cx    = (e.clientX - rect.left) * (WORLD_W / rect.width);
-    const cy    = (e.clientY - rect.top)  * (WORLD_H / rect.height);
-    const btn   = MUSIC_BTN;
+    const rect = canvas.getBoundingClientRect();
+    const cx   = (e.clientX - rect.left) * (WORLD_W / rect.width);
+    const cy   = (e.clientY - rect.top)  * (WORLD_H / rect.height);
+    const btn  = SOUND_BTN;
     if (cx >= btn.x && cx <= btn.x + btn.size && cy >= btn.y && cy <= btn.y + btn.size) {
-      musicMuted = !musicMuted;
-      introAudio.muted = musicMuted;
+      soundMuted = !soundMuted;
+      setSoundMuted(soundMuted);
+      introAudio.muted = soundMuted;
     }
   });
 

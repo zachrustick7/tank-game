@@ -22,7 +22,7 @@ export const ENEMY_CONFIGS = {
     },
     behavior: {
       aggression:       0.7,
-      retreatThreshold: 0.2,
+      retreatThreshold: 0,
       reactionDelay:    0.3,
       commitDuration:   [0.8, 1.5],
       sightRange:       600,
@@ -49,13 +49,40 @@ export const ENEMY_CONFIGS = {
     },
     behavior: {
       aggression:       1.0,
-      retreatThreshold: 0.08,
+      retreatThreshold: 0,
       reactionDelay:    0.15,
       commitDuration:   [1.0, 2.0],
       sightRange:       600,
       attackRange:      140,
     },
     physicalProfile: ENEMY_PHYS.torcher,
+  },
+
+  // Slow, tanky, fires 8 shells simultaneously in all cardinal/diagonal directions
+  sprayer: {
+    role:  'sprayer',
+    color: COLORS.tank.orange,
+    hp:    80,
+    movement: {
+      type:       'kite',
+      speed:      45,
+      idealRange: 260,
+    },
+    attack: {
+      type:       'spray',
+      cooldown:   3.5,
+      aimTime:    0.7,
+      shellSpeed: 140,
+    },
+    behavior: {
+      aggression:       0.6,
+      retreatThreshold: 0,
+      reactionDelay:    0.4,
+      commitDuration:   [1.0, 2.0],
+      sightRange:       550,
+      attackRange:      350,
+    },
+    physicalProfile: ENEMY_PHYS.sprayer,
   },
 
   // Orbits and fires 3-round bursts — small shells, hard to dodge in pairs
@@ -80,7 +107,7 @@ export const ENEMY_CONFIGS = {
     },
     behavior: {
       aggression:       0.7,
-      retreatThreshold: 0.2,
+      retreatThreshold: 0,
       reactionDelay:    0.15,
       commitDuration:   [0.6, 1.2],
       sightRange:       550,

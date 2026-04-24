@@ -384,6 +384,27 @@ export class Enemy {
       return;
     }
 
+    if (cfg.attack.type === 'spray') {
+      if (this._phase === PHASE.AIMING) {
+        this._applyMovement(dx, dy, dist, dt, 0.2);
+        this._aimTimer -= dt;
+        if (this._aimTimer <= 0) {
+          this._fireSpray();
+          this._cooldownTimer = cfg.attack.cooldown;
+          this._phase         = PHASE.COOLDOWN;
+        }
+      } else if (this._phase === PHASE.COOLDOWN) {
+        this._applyMovement(dx, dy, dist, dt, 0.6);
+        this._cooldownTimer -= dt;
+        if (this._cooldownTimer <= 0) {
+          this._phase    = PHASE.AIMING;
+          this._aimTimer = cfg.attack.aimTime;
+          playSound('reload');
+        }
+      }
+      return;
+    }
+
     switch (this._phase) {
       case PHASE.AIMING: {
         if (cfg.movement.type !== 'chase') {
@@ -439,6 +460,17 @@ export class Enemy {
     const speed = this.config.attack.shellSpeed    ?? SHELL_SPEED;
     this.shells.push(new Shell(sx, sy, angle, speed, LAYER.ENEMY_SHELL, ip));
     this._recoil = RECOIL_AMOUNT;
+    playSound('shoot');
+  }
+
+  _fireSpray() {
+    const speed = this.config.attack.shellSpeed ?? SHELL_SPEED;
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      const sx = this.x + Math.cos(angle) * 22;
+      const sy = this.y + Math.sin(angle) * 22;
+      this.shells.push(new Shell(sx, sy, angle, speed, LAYER.ENEMY_SHELL, IMPACT.spray));
+    }
     playSound('shoot');
   }
 
@@ -530,11 +562,17 @@ export class Enemy {
 
     // Barrel
     ctx.save();
-    ctx.rotate(this.bodyAngle + Math.PI / 2);
-    ctx.translate(0, BARREL_MOUNT_Y);
-    ctx.rotate(this.barrelOffset);
-    ctx.translate(0, this._recoil);
-    ctx.drawImage(sprites.barrel, -9, -BARREL_H * BARREL_PIVOT_FRAC, 18, BARREL_H);
+    if (this.config.role === 'sprayer') {
+      // Octa barrel: symmetric, just rotates with body
+      ctx.rotate(this.bodyAngle + Math.PI / 2);
+      ctx.drawImage(sprites.barrel, -20, -20, 40, 40);
+    } else {
+      ctx.rotate(this.bodyAngle + Math.PI / 2);
+      ctx.translate(0, BARREL_MOUNT_Y);
+      ctx.rotate(this.barrelOffset);
+      ctx.translate(0, this._recoil);
+      ctx.drawImage(sprites.barrel, -9, -BARREL_H * BARREL_PIVOT_FRAC, 18, BARREL_H);
+    }
     ctx.restore();
 
     // HP bar (always visible so player can read damage dealt)

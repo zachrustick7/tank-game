@@ -57,6 +57,7 @@ export const ENEMY_PHYS = {
   infantry: { mass: 1.5, knockbackResistance: 0.10, traction: 0.50, friction: 320, maxImpactSpeed: 200 },
   torcher:  { mass: 1.2, knockbackResistance: 0.05, traction: 0.35, friction: 350, maxImpactSpeed: 200 },
   flanker:  { mass: 0.9, knockbackResistance: 0.00, traction: 0.20, friction: 400, maxImpactSpeed: 240 },
+  sprayer:  { mass: 1.8, knockbackResistance: 0.20, traction: 0.45, friction: 300, maxImpactSpeed: 180 },
 };
 
 // --- Ammo / impact profiles ---
@@ -68,4 +69,5 @@ export const ENEMY_PHYS = {
 export const IMPACT = {
   standard: { damage: 25, impactForce: 220, poiseDamage: 20, pierceCount: 0 },
   burst:    { damage: 12, impactForce: 120, poiseDamage: 8,  pierceCount: 0 },
+  spray:    { damage: 12, impactForce: 100, poiseDamage: 5,  pierceCount: 0 },
 };

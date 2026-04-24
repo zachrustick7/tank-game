@@ -4,6 +4,9 @@ import { VOL_SHOOT, VOL_RELOAD } from './config.js';
 // Uses cloneNode() so the same sound can overlap itself (e.g. rapid fire).
 
 const _sounds = {};
+let   _muted  = false;
+
+export function setSoundMuted(muted) { _muted = muted; }
 
 export function loadSounds() {
   _sounds.shoot  = new Audio('assets/shell_1.m4a');
@@ -13,6 +16,7 @@ export function loadSounds() {
 }
 
 export function playSound(name) {
+  if (_muted) return;
   const src = _sounds[name];
   if (!src) return;
   const clone = src.cloneNode();

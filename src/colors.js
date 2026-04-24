@@ -63,6 +63,7 @@ export const COLORS = {
     purple: "#9A7AA0",
     dark:   "#4F6D5A",
     light:  "#A3BFA8",
+    orange: "#FF8D28",
   },
 
   // =============================
