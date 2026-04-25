@@ -46,7 +46,7 @@ function drawCorridorBg(ctx) {
   const cx = WORLD_W / 2;
   const sp = COR_W / 2 + SHORE_PAD;
   ctx.fillStyle = COLORS.extended.blueDark;
-  ctx.fillRect(0, -200, WORLD_W, COR_H + 400);
+  ctx.fillRect(-120, -200, WORLD_W + 240, COR_H + 400); // extra width covers camera pad gaps
   ctx.fillStyle = COLORS.sand[300];
   ctx.beginPath();
   ctx.roundRect(cx - sp, -SHORE_PAD, sp * 2, COR_H + SHORE_PAD * 2, ISLAND_R + SHORE_PAD);
@@ -119,12 +119,12 @@ const LEVELS = [
 
         // ── Wave 3 — 4 tanks ──────────────────────────────────────────────
         new Enemy(cx - 250,        COR_H - 1040, ENEMY_CONFIGS.flanker),
-        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.infantry),
+        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.crab),
         new Enemy(cx + 80,         COR_H - 1040, ENEMY_CONFIGS.torcher),
         new Enemy(cx + 250,        COR_H - 1040, ENEMY_CONFIGS.flanker),
 
         // ── Wave 4 — 3 tanks ──────────────────────────────────────────────
-        new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.flanker),
+        new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.crab),
         new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.torcher),
         new Enemy(cx + 200,        COR_H - 1160, ENEMY_CONFIGS.flanker),
       ];
@@ -161,6 +161,145 @@ const LEVELS = [
         new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.sprayer),
         new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.sprayer),
         new Enemy(cx + 200,        COR_H - 1160, ENEMY_CONFIGS.infantry),
+      ];
+    },
+  },
+
+  {
+    id:          'level3',
+    name:        'Level 3',
+    description: ['Crab walkers everywhere.', 'Watch your flanks.'],
+    width:       WORLD_W,
+    height:      COR_H,
+    cameraPad:   80,
+    playerSpawn: { x: WORLD_W / 2, y: COR_H - 120 },
+    bounds:      CORRIDOR_BOUNDS,
+    drawBackground: drawCorridorBg,
+    spawn: () => {
+      const cx = WORLD_W / 2;
+      return [
+        // ── Wave 1 — 1 crab ───────────────────────────────────────────────
+        new Enemy(cx,              COR_H - 680,  ENEMY_CONFIGS.crab),
+
+        // ── Wave 2 — 2 crabs ──────────────────────────────────────────────
+        new Enemy(cx - 140,        COR_H - 860,  ENEMY_CONFIGS.crab),
+        new Enemy(cx + 140,        COR_H - 860,  ENEMY_CONFIGS.crab),
+
+        // ── Wave 3 — 4 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 260,        COR_H - 1040, ENEMY_CONFIGS.crab),
+        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.torcher),
+        new Enemy(cx + 80,         COR_H - 1040, ENEMY_CONFIGS.flanker),
+        new Enemy(cx + 260,        COR_H - 1040, ENEMY_CONFIGS.crab),
+
+        // ── Wave 4 — 3 tanks ──────────────────────────────────────────────
+        new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.crab),
+        new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.crab),
+        new Enemy(cx + 200,        COR_H - 1160, ENEMY_CONFIGS.sprayer),
+      ];
+    },
+  },
+
+  {
+    id:          'level4',
+    name:        'Level 4',
+    description: ['Snipers in the dark.', 'Stay unpredictable.'],
+    width:       WORLD_W,
+    height:      COR_H,
+    cameraPad:   80,
+    playerSpawn: { x: WORLD_W / 2, y: COR_H - 120 },
+    bounds:      CORRIDOR_BOUNDS,
+    drawBackground: drawCorridorBg,
+    spawn: () => {
+      const cx = WORLD_W / 2;
+      return [
+        // ── Wave 1 — 1 sniper ─────────────────────────────────────────────
+        new Enemy(cx,              COR_H - 680,  ENEMY_CONFIGS.sniper),
+
+        // ── Wave 2 — 1 sniper + 2 flankers ───────────────────────────────
+        new Enemy(cx - 180,        COR_H - 860,  ENEMY_CONFIGS.flanker),
+        new Enemy(cx,              COR_H - 900,  ENEMY_CONFIGS.sniper),
+        new Enemy(cx + 180,        COR_H - 860,  ENEMY_CONFIGS.flanker),
+
+        // ── Wave 3 — 2 snipers + 1 torcher + 1 crab ─────────────────────
+        new Enemy(cx - 250,        COR_H - 1040, ENEMY_CONFIGS.sniper),
+        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.torcher),
+        new Enemy(cx + 80,         COR_H - 1040, ENEMY_CONFIGS.crab),
+        new Enemy(cx + 250,        COR_H - 1040, ENEMY_CONFIGS.sniper),
+
+        // ── Wave 4 — 2 snipers + 1 flanker ───────────────────────────────
+        new Enemy(cx - 180,        COR_H - 1160, ENEMY_CONFIGS.sniper),
+        new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.flanker),
+        new Enemy(cx + 180,        COR_H - 1160, ENEMY_CONFIGS.sniper),
+      ];
+    },
+  },
+
+  {
+    id:          'level5',
+    name:        'Level 5',
+    description: ['Watch the glow. Find the gaps.', 'Move before it splits.'],
+    width:       WORLD_W,
+    height:      COR_H,
+    cameraPad:   80,
+    playerSpawn: { x: WORLD_W / 2, y: COR_H - 120 },
+    bounds:      CORRIDOR_BOUNDS,
+    drawBackground: drawCorridorBg,
+    spawn: () => {
+      const cx = WORLD_W / 2;
+      return [
+        // ── Wave 1 — 1 splitter ───────────────────────────────────────────
+        new Enemy(cx,              COR_H - 680,  ENEMY_CONFIGS.splitter),
+
+        // ── Wave 2 — 2 splitters + 1 infantry ────────────────────────────
+        new Enemy(cx - 160,        COR_H - 860,  ENEMY_CONFIGS.splitter),
+        new Enemy(cx + 160,        COR_H - 860,  ENEMY_CONFIGS.splitter),
+        new Enemy(cx,              COR_H - 820,  ENEMY_CONFIGS.infantry),
+
+        // ── Wave 3 — 2 splitters + 1 crab + 1 flanker ────────────────────
+        new Enemy(cx - 260,        COR_H - 1040, ENEMY_CONFIGS.splitter),
+        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.flanker),
+        new Enemy(cx + 80,         COR_H - 1040, ENEMY_CONFIGS.crab),
+        new Enemy(cx + 260,        COR_H - 1040, ENEMY_CONFIGS.splitter),
+
+        // ── Wave 4 — 2 splitters + 1 sniper ──────────────────────────────
+        new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.splitter),
+        new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.sniper),
+        new Enemy(cx + 200,        COR_H - 1160, ENEMY_CONFIGS.splitter),
+      ];
+    },
+  },
+
+  {
+    id:          'level6',
+    name:        'Level 6',
+    description: ['Never stop moving.', 'The ground is the danger.'],
+    width:       WORLD_W,
+    height:      COR_H,
+    cameraPad:   80,
+    playerSpawn: { x: WORLD_W / 2, y: COR_H - 120 },
+    bounds:      CORRIDOR_BOUNDS,
+    drawBackground: drawCorridorBg,
+    spawn: () => {
+      const cx = WORLD_W / 2;
+      return [
+        // ── Wave 1 — 1 mortar ─────────────────────────────────────────────
+        new Enemy(cx,              COR_H - 680,  ENEMY_CONFIGS.mortar),
+
+        // ── Wave 2 — 2 mortars + 1 infantry ──────────────────────────────
+        new Enemy(cx - 160,        COR_H - 860,  ENEMY_CONFIGS.mortar),
+        new Enemy(cx + 160,        COR_H - 860,  ENEMY_CONFIGS.mortar),
+        new Enemy(cx,              COR_H - 820,  ENEMY_CONFIGS.infantry),
+
+        // ── Wave 3 — 2 mortars + 1 sniper + 1 torcher ────────────────────
+        new Enemy(cx - 260,        COR_H - 1040, ENEMY_CONFIGS.mortar),
+        new Enemy(cx - 80,         COR_H - 1040, ENEMY_CONFIGS.sniper),
+        new Enemy(cx + 80,         COR_H - 1040, ENEMY_CONFIGS.torcher),
+        new Enemy(cx + 260,        COR_H - 1040, ENEMY_CONFIGS.mortar),
+
+        // ── Wave 4 — 2 mortars + 1 splitter ──────────────────────────────
+        new Enemy(cx - 200,        COR_H - 1160, ENEMY_CONFIGS.mortar),
+        new Enemy(cx,              COR_H - 1210, ENEMY_CONFIGS.splitter),
+        new Enemy(cx + 200,        COR_H - 1160, ENEMY_CONFIGS.mortar),
       ];
     },
   },
@@ -280,13 +419,13 @@ function drawLevelSelect() {
 
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.neutral.cream;
-  ctx.font = 'bold 28px monospace';
-  ctx.fillText('SELECT LEVEL', WORLD_W / 2, 120);
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText('SELECT LEVEL', WORLD_W / 2, 38);
 
-  const cardW = 380, cardH = 160;
+  const cardW = 380, cardH = 88;
   const cardX = (WORLD_W - cardW) / 2;
-  const cardY = 180;
-  const gap   = 180;
+  const cardY = 52;
+  const gap   = 102;
 
   LEVELS.forEach((lvl, i) => {
     const cy         = cardY + i * gap;
@@ -311,13 +450,13 @@ function drawLevelSelect() {
     }
 
     ctx.fillStyle = COLORS.neutral.cream;
-    ctx.font      = 'bold 26px monospace';
-    ctx.fillText(lvl.name, WORLD_W / 2, cy + 44);
+    ctx.font      = 'bold 18px monospace';
+    ctx.fillText(lvl.name, WORLD_W / 2, cy + 24);
 
     ctx.fillStyle = COLORS.sand[300];
-    ctx.font      = '15px monospace';
+    ctx.font      = '13px monospace';
     lvl.description.forEach((line, li) => {
-      ctx.fillText(line, WORLD_W / 2, cy + 78 + li * 22);
+      ctx.fillText(line, WORLD_W / 2, cy + 46 + li * 16);
     });
   });
 
@@ -530,10 +669,14 @@ function loop(timestamp) {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
-  const [body, barrel, octaBarrel] = await Promise.all([
+  const [body, barrel, octaBarrel, twinBarrel, sniperBarrel, splitterBarrel, mortarBarrel] = await Promise.all([
     loadImage('assets/tank_body.png'),
     loadImage('assets/tank_barrel.png'),
     loadImage('assets/tank_octa_barrel.png'),
+    loadImage('assets/tank_twin_barrel.png'),
+    loadImage('assets/tank_heavy_sniper_barrel.png'),
+    loadImage('assets/tank_splitter_barrel.png'),
+    loadImage('assets/tank_mortar_barrel.png'),
   ]);
 
   assets.tankBody   = tintSprite(body,   COLORS.tank.green);
@@ -541,7 +684,12 @@ async function init() {
 
   assets.enemies = {};
   for (const [role, cfg] of Object.entries(ENEMY_CONFIGS)) {
-    const barrelSrc = role === 'sprayer' ? octaBarrel : barrel;
+    const barrelSrc = role === 'sprayer'  ? octaBarrel
+                    : role === 'crab'     ? twinBarrel
+                    : role === 'sniper'   ? sniperBarrel
+                    : role === 'splitter' ? splitterBarrel
+                    : role === 'mortar'   ? mortarBarrel
+                    : barrel;
     assets.enemies[role] = {
       body:    tintSprite(body,      cfg.color),
       barrel:  tintSprite(barrelSrc, cfg.color),

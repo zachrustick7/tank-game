@@ -8,3 +8,6 @@ ammo type: scatter shot
 ammo type: laser beam
 attachment: stable accelerator - doubles firing speed when idle
 close range enemy with like a blow torch thing
+
+---
+the colors of the tanks/barrels make it hard to tell where the barrels are aiming

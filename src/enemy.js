@@ -1,4 +1,4 @@
-import { Shell } from './shell.js';
+import { Shell, SplitterShell, MortarShell } from './shell.js';
 import {
   BARREL_PIVOT_FRAC, BARREL_MOUNT_Y,
   RECOIL_AMOUNT, RECOIL_RETURN,
@@ -13,7 +13,7 @@ import { IMPACT } from './config.js';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATE = { IDLE: 'idle', CHASE: 'chase', ATTACK: 'attack', REPOSITION: 'reposition', RETREAT: 'retreat', PATROL: 'patrol' };
-const PHASE = { AIMING: 'aiming', FIRING: 'firing', COOLDOWN: 'cooldown' };
+const PHASE = { AIMING: 'aiming', LOCKED: 'locked', FIRING: 'firing', COOLDOWN: 'cooldown' };
 
 const BODY_TURN_SPEED   = 2.6;
 const SEPARATION_RADIUS = 58;
@@ -64,6 +64,7 @@ export class Enemy {
     this._burstRemaining = 0;
     this._burstTimer     = 0;
     this._lockedAim      = 0;
+    this._lockTimer      = 0;
 
     // ── Movement ──
     this._orbitDir  = Math.random() < 0.5 ? 1 : -1;
@@ -80,6 +81,12 @@ export class Enemy {
 
     // ── Recoil ──
     this._recoil = 0;
+
+    // ── Mortar ──
+    this._mortarShells  = [];
+    this._mortarTargetX = x;
+    this._mortarTargetY = y;
+    this._blastFlashes  = [];
 
     // ── Flame ──
     this._flaming       = false;
@@ -230,8 +237,8 @@ export class Enemy {
       }
     }
 
-    // 4. Aim barrel at player (unless locked during FIRING)
-    if (!(this._state === STATE.ATTACK && this._phase === PHASE.FIRING)) {
+    // 4. Aim barrel at player (unless locked during FIRING or LOCKED phase)
+    if (!(this._state === STATE.ATTACK && (this._phase === PHASE.FIRING || this._phase === PHASE.LOCKED))) {
       this.barrelOffset = Math.atan2(dy, dx) - this.bodyAngle;
     }
 
@@ -269,10 +276,40 @@ export class Enemy {
 
     // 8. Recoil & shells
     this._recoil = Math.max(0, this._recoil - RECOIL_RETURN * dt);
-    for (const shell of this.shells) shell.update(dt, 99999, 99999);
-    this.shells = this.shells.filter(s => !s.dead);
+    const _spawnBuf = [];
+    for (const shell of this.shells) {
+      shell.update(dt, 99999, 99999);
+      if (shell.didSplit) {
+        const spd = this.config.attack?.shrapnelSpeed ?? 85;
+        for (let i = 0; i < 8; i++) {
+          const s = new Shell(shell.x, shell.y, i * Math.PI / 4, spd, LAYER.ENEMY_SHELL, IMPACT.shrapnel);
+          s.radius = 3;
+          _spawnBuf.push(s);
+        }
+      }
+    }
+    this.shells = [...this.shells.filter(s => !s.dead), ..._spawnBuf];
 
-    // 9. Sparks
+    // 9. Mortar shells — airborne, damage on landing
+    for (const ms of this._mortarShells) {
+      ms.update(dt);
+      if (ms.landed) {
+        const mdx = player.x - ms.targetX;
+        const mdy = player.y - ms.targetY;
+        const md  = Math.hypot(mdx, mdy);
+        if (md < ms.blastRadius) {
+          const falloff = 1 - md / ms.blastRadius;
+          player.takeDamage(Math.round(ms.damage * falloff));
+          player.applyImpulse(Math.atan2(mdy, mdx), ms.impactForce * falloff);
+        }
+        this._blastFlashes.push({ x: ms.targetX, y: ms.targetY, r: ms.blastRadius, life: 0.45 });
+      }
+    }
+    this._mortarShells = this._mortarShells.filter(ms => !ms.dead);
+    for (const f of this._blastFlashes) f.life -= dt;
+    this._blastFlashes = this._blastFlashes.filter(f => f.life > 0);
+
+    // 10. Sparks
     for (const s of this._sparks) {
       s.x  += s.vx * dt;
       s.y  += s.vy * dt;
@@ -332,6 +369,14 @@ export class Enemy {
         const vx = Math.cos(perpAngle) + Math.cos(radialAngle) * radialBlend;
         const vy = Math.sin(perpAngle) + Math.sin(radialAngle) * radialBlend;
         return Math.atan2(vy, vx);
+      }
+
+      case 'crab': {
+        if (dist > ideal + 50) return toPlayer; // close the gap when too far
+        // Strafe horizontally in world space, flipping direction periodically
+        const period = 1.8 + this._speedMult;
+        const phase  = Math.floor((this._time + this._speedMult * 3) / period) % 2;
+        return phase === 0 ? 0 : Math.PI;
       }
     }
   }
@@ -405,6 +450,133 @@ export class Enemy {
       return;
     }
 
+    if (cfg.attack.type === 'mortar') {
+      switch (this._phase) {
+        case PHASE.AIMING: {
+          // Red marker tracks player live — player must dodge before shot locks
+          this._mortarTargetX = player.x;
+          this._mortarTargetY = player.y;
+          this._aimTimer -= dt;
+          if (this._aimTimer <= 0) {
+            this._lockedAim = Math.atan2(
+              this._mortarTargetY - this.y,
+              this._mortarTargetX - this.x,
+            );
+            this._fireMortar(this._mortarTargetX, this._mortarTargetY);
+            this._lockTimer = cfg.attack.flightTime;
+            this._phase     = PHASE.LOCKED;
+          }
+          break;
+        }
+        case PHASE.LOCKED: {
+          // Barrel stays pointed at target while shell is in air
+          this.barrelOffset = this._lockedAim - this.bodyAngle;
+          this._lockTimer -= dt;
+          if (this._lockTimer <= 0) {
+            this._cooldownTimer = cfg.attack.cooldown;
+            this._phase         = PHASE.COOLDOWN;
+          }
+          break;
+        }
+        case PHASE.COOLDOWN: {
+          this._applyMovement(dx, dy, dist, dt, 0.35);
+          this._cooldownTimer -= dt;
+          if (this._cooldownTimer <= 0) {
+            this._phase    = PHASE.AIMING;
+            this._aimTimer = cfg.attack.aimTime;
+            playSound('reload');
+          }
+          break;
+        }
+      }
+      return;
+    }
+
+    if (cfg.attack.type === 'splitter') {
+      switch (this._phase) {
+        case PHASE.AIMING: {
+          // Stand still, barrel tracks player via main update
+          this._aimTimer -= dt;
+          if (this._aimTimer <= 0) {
+            const spread = (1 - cfg.attack.accuracy) * (Math.PI / 8);
+            this._lockedAim = Math.atan2(dy, dx) + (Math.random() - 0.5) * 2 * spread;
+            this._phase     = PHASE.FIRING;
+          }
+          break;
+        }
+        case PHASE.FIRING: {
+          this.barrelOffset = this._lockedAim - this.bodyAngle;
+          this._fireSplitter(this._lockedAim);
+          this._lockTimer = 1.5; // hold still post-fire while shell travels
+          this._phase     = PHASE.LOCKED;
+          break;
+        }
+        case PHASE.LOCKED: {
+          this.barrelOffset = this._lockedAim - this.bodyAngle;
+          this._lockTimer -= dt;
+          if (this._lockTimer <= 0) {
+            this._cooldownTimer = cfg.attack.cooldown;
+            this._phase         = PHASE.COOLDOWN;
+          }
+          break;
+        }
+        case PHASE.COOLDOWN: {
+          this._applyMovement(dx, dy, dist, dt, 0.4); // slow drift reposition
+          this._cooldownTimer -= dt;
+          if (this._cooldownTimer <= 0) {
+            this._phase    = PHASE.AIMING;
+            this._aimTimer = cfg.attack.aimTime;
+            playSound('reload');
+          }
+          break;
+        }
+      }
+      return;
+    }
+
+    if (cfg.attack.type === 'sniper') {
+      switch (this._phase) {
+        case PHASE.AIMING: {
+          // Stand still, barrel auto-tracks player via main update
+          this._aimTimer -= dt;
+          if (this._aimTimer <= 0) {
+            const spread = (1 - cfg.attack.accuracy) * (Math.PI / 12);
+            this._lockedAim = Math.atan2(dy, dx) + (Math.random() - 0.5) * 2 * spread;
+            this._lockTimer = cfg.attack.lockTime;
+            this._phase     = PHASE.LOCKED;
+          }
+          break;
+        }
+        case PHASE.LOCKED: {
+          // Barrel frozen at locked angle, laser brightens
+          this.barrelOffset = this._lockedAim - this.bodyAngle;
+          this._lockTimer -= dt;
+          if (this._lockTimer <= 0) {
+            this._phase = PHASE.FIRING;
+          }
+          break;
+        }
+        case PHASE.FIRING: {
+          this.barrelOffset = this._lockedAim - this.bodyAngle;
+          this._fire(this._lockedAim);
+          this._cooldownTimer = cfg.attack.cooldown;
+          this._phase         = PHASE.COOLDOWN;
+          break;
+        }
+        case PHASE.COOLDOWN: {
+          this._applyMovement(dx, dy, dist, dt, 0.3);
+          this._cooldownTimer -= dt;
+          if (this._cooldownTimer <= 0) {
+            this._phase    = PHASE.AIMING;
+            this._aimTimer = cfg.attack.aimTime;
+            playSound('reload');
+          }
+          break;
+        }
+      }
+      return;
+    }
+
     switch (this._phase) {
       case PHASE.AIMING: {
         if (cfg.movement.type !== 'chase') {
@@ -424,7 +596,8 @@ export class Enemy {
       case PHASE.FIRING: {
         this.barrelOffset = this._lockedAim - this.bodyAngle;
         if (this._burstTimer <= 0 && this._burstRemaining > 0) {
-          this._fire(this._lockedAim);
+          if (cfg.attack.type === 'twin') this._fireTwin(this._lockedAim);
+          else                            this._fire(this._lockedAim);
           this._burstRemaining--;
           this._burstTimer = cfg.attack.burstDelay ?? 0;
         }
@@ -463,6 +636,20 @@ export class Enemy {
     playSound('shoot');
   }
 
+  _fireTwin(angle) {
+    const speed   = this.config.attack.shellSpeed ?? SHELL_SPEED;
+    const ip      = this.config.attack.impactProfile ?? IMPACT.standard;
+    const tipDist = BARREL_H * BARREL_PIVOT_FRAC;
+    const bx = this.x + Math.cos(angle) * tipDist;
+    const by = this.y + Math.sin(angle) * tipDist;
+    const px = Math.cos(angle + Math.PI / 2) * 6;
+    const py = Math.sin(angle + Math.PI / 2) * 6;
+    this.shells.push(new Shell(bx - px, by - py, angle, speed, LAYER.ENEMY_SHELL, ip));
+    this.shells.push(new Shell(bx + px, by + py, angle, speed, LAYER.ENEMY_SHELL, ip));
+    this._recoil = RECOIL_AMOUNT;
+    playSound('shoot');
+  }
+
   _fireSpray() {
     const speed = this.config.attack.shellSpeed ?? SHELL_SPEED;
     for (let i = 0; i < 8; i++) {
@@ -471,6 +658,31 @@ export class Enemy {
       const sy = this.y + Math.sin(angle) * 22;
       this.shells.push(new Shell(sx, sy, angle, speed, LAYER.ENEMY_SHELL, IMPACT.spray));
     }
+    playSound('shoot');
+  }
+
+  _fireMortar(tx, ty) {
+    const cfg     = this.config.attack;
+    const angle   = Math.atan2(ty - this.y, tx - this.x);
+    const tipDist = BARREL_H * BARREL_PIVOT_FRAC;
+    const sx = this.x + Math.cos(angle) * tipDist;
+    const sy = this.y + Math.sin(angle) * tipDist;
+    this._mortarShells.push(new MortarShell(
+      sx, sy, tx, ty,
+      cfg.flightTime, cfg.blastRadius, cfg.damage, cfg.impactForce,
+    ));
+    this._recoil = RECOIL_AMOUNT;
+    playSound('shoot');
+  }
+
+  _fireSplitter(angle) {
+    const speed   = this.config.attack.shellSpeed;
+    const ip      = this.config.attack.impactProfile ?? IMPACT.splitter;
+    const tipDist = BARREL_H * BARREL_PIVOT_FRAC;
+    const sx = this.x + Math.cos(angle) * tipDist;
+    const sy = this.y + Math.sin(angle) * tipDist;
+    this.shells.push(new SplitterShell(sx, sy, angle, speed, LAYER.ENEMY_SHELL, ip));
+    this._recoil = RECOIL_AMOUNT;
     playSound('shoot');
   }
 
@@ -563,7 +775,6 @@ export class Enemy {
     // Barrel
     ctx.save();
     if (this.config.role === 'sprayer') {
-      // Octa barrel: symmetric, just rotates with body
       ctx.rotate(this.bodyAngle + Math.PI / 2);
       ctx.drawImage(sprites.barrel, -20, -20, 40, 40);
     } else {
@@ -571,7 +782,8 @@ export class Enemy {
       ctx.translate(0, BARREL_MOUNT_Y);
       ctx.rotate(this.barrelOffset);
       ctx.translate(0, this._recoil);
-      ctx.drawImage(sprites.barrel, -9, -BARREL_H * BARREL_PIVOT_FRAC, 18, BARREL_H);
+      const bw = this.config.role === 'crab' ? 28 : 18;
+      ctx.drawImage(sprites.barrel, -bw / 2, -BARREL_H * BARREL_PIVOT_FRAC, bw, BARREL_H);
     }
     ctx.restore();
 
@@ -582,6 +794,119 @@ export class Enemy {
 
     if (this._flaming) this._drawFlame(ctx);
     if (this._sparks.length) this._drawSparks(ctx);
+    if (this.config.attack?.type === 'sniper') this._drawSniperLaser(ctx);
+    if (this.config.attack?.type === 'mortar')  this._drawMortarEffects(ctx);
+  }
+
+  _drawMortarEffects(ctx) {
+    // Tracking marker during AIMING
+    if (this._state === STATE.ATTACK && this._phase === PHASE.AIMING) {
+      this._drawMortarMarker(ctx, this._mortarTargetX, this._mortarTargetY, true);
+    }
+    // In-flight mortars + their locked markers
+    for (const ms of this._mortarShells) {
+      this._drawMortarMarker(ctx, ms.targetX, ms.targetY, false);
+      ms.draw(ctx);
+    }
+    // Blast flash on landing
+    for (const f of this._blastFlashes) {
+      const frac = f.life / 0.45;
+      ctx.save();
+      ctx.globalAlpha = frac * 0.65;
+      ctx.fillStyle   = COLORS.effects.explosionOuter;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r * (1 + (1 - frac) * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = frac * 0.9;
+      ctx.fillStyle   = COLORS.effects.explosionCore;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r * 0.38 * (1 + (1 - frac) * 0.4), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  _drawMortarMarker(ctx, x, y, tracking) {
+    const r     = this.config.attack.blastRadius;
+    const pulse = 0.65 + Math.sin(this._time * (tracking ? 5 : 9)) * 0.25;
+
+    ctx.save();
+    // Fill
+    ctx.globalAlpha = pulse * 0.20;
+    ctx.fillStyle   = '#FF1A1A';
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dashed border
+    ctx.globalAlpha = pulse * 0.80;
+    ctx.strokeStyle = tracking ? '#FF5050' : '#FF1A1A';
+    ctx.lineWidth   = tracking ? 2.5 : 2;
+    ctx.setLineDash([8, 5]);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Crosshair
+    ctx.globalAlpha = pulse * 0.55;
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y);
+    ctx.moveTo(x, y - 9); ctx.lineTo(x, y + 9);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  _drawSniperLaser(ctx) {
+    if (this._state !== STATE.ATTACK) return;
+    if (this._phase !== PHASE.AIMING && this._phase !== PHASE.LOCKED) return;
+
+    const barrelAngle = this.bodyAngle + this.barrelOffset;
+    const tipDist     = BARREL_H * BARREL_PIVOT_FRAC;
+    const tipX = this.x + Math.cos(barrelAngle) * tipDist;
+    const tipY = this.y + Math.sin(barrelAngle) * tipDist;
+    const range = this.config.attack.range ?? 700;
+    const endX  = tipX + Math.cos(barrelAngle) * range;
+    const endY  = tipY + Math.sin(barrelAngle) * range;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    if (this._phase === PHASE.LOCKED) {
+      const pulse = 0.8 + Math.sin(this._time * 28) * 0.2;
+      // Glow
+      ctx.globalAlpha = 0.28 * pulse;
+      ctx.strokeStyle = '#FF2020';
+      ctx.lineWidth   = 7;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      // Core beam
+      ctx.globalAlpha = 0.88 * pulse;
+      ctx.strokeStyle = '#FF5555';
+      ctx.lineWidth   = 1.8;
+      ctx.stroke();
+      // Bright center
+      ctx.globalAlpha = 0.55 * pulse;
+      ctx.strokeStyle = '#FFCCCC';
+      ctx.lineWidth   = 0.6;
+      ctx.stroke();
+    } else {
+      // Dim tracking beam
+      const flicker = 0.28 + Math.sin(this._time * 14) * 0.06;
+      ctx.globalAlpha = flicker;
+      ctx.strokeStyle = '#FF3030';
+      ctx.lineWidth   = 1;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+    }
+
+    ctx.restore();
   }
 
   _drawFlame(ctx) {

@@ -58,6 +58,10 @@ export const ENEMY_PHYS = {
   torcher:  { mass: 1.2, knockbackResistance: 0.05, traction: 0.35, friction: 350, maxImpactSpeed: 200 },
   flanker:  { mass: 0.9, knockbackResistance: 0.00, traction: 0.20, friction: 400, maxImpactSpeed: 240 },
   sprayer:  { mass: 1.8, knockbackResistance: 0.20, traction: 0.45, friction: 300, maxImpactSpeed: 180 },
+  crab:     { mass: 1.3, knockbackResistance: 0.10, traction: 0.40, friction: 360, maxImpactSpeed: 190 },
+  sniper:   { mass: 2.0, knockbackResistance: 0.20, traction: 0.50, friction: 280, maxImpactSpeed: 150 },
+  splitter: { mass: 2.2, knockbackResistance: 0.25, traction: 0.45, friction: 270, maxImpactSpeed: 140 },
+  mortar:   { mass: 2.5, knockbackResistance: 0.30, traction: 0.40, friction: 250, maxImpactSpeed: 120 },
 };
 
 // --- Ammo / impact profiles ---
@@ -70,4 +74,7 @@ export const IMPACT = {
   standard: { damage: 25, impactForce: 220, poiseDamage: 20, pierceCount: 0 },
   burst:    { damage: 12, impactForce: 120, poiseDamage: 8,  pierceCount: 0 },
   spray:    { damage: 12, impactForce: 100, poiseDamage: 5,  pierceCount: 0 },
+  sniper:   { damage: 60, impactForce: 350, poiseDamage: 60, pierceCount: 0 },
+  splitter: { damage: 30, impactForce: 160, poiseDamage: 25, pierceCount: 0 },
+  shrapnel: { damage: 18, impactForce: 90,  poiseDamage: 12, pierceCount: 0 },
 };
