@@ -613,14 +613,33 @@ function handleLevelSelectKey(e) {
 
 // ─── Multiplayer helpers ──────────────────────────────────────────────────────
 
-function makeShellProxy(x, y) {
+const PROXY_TRAIL = 8;
+const PROXY_STEP  = 7; // px between simulated trail points
+
+function makeShellProxy(x, y, angle) {
   return {
     x, y, dead: false,
     draw(ctx) {
       ctx.save();
-      ctx.fillStyle = '#F5E060';
+      // Simulated trail — project backwards along angle
+      for (let i = 0; i < PROXY_TRAIL; i++) {
+        const alpha = (i + 1) / PROXY_TRAIL * 0.4;
+        const tx = x - Math.cos(angle) * PROXY_STEP * (PROXY_TRAIL - i);
+        const ty = y - Math.sin(angle) * PROXY_STEP * (PROXY_TRAIL - i);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#D4A020';
+        ctx.beginPath();
+        ctx.arc(tx, ty, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#F0C030';
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#FFF0A0';
+      ctx.beginPath();
+      ctx.arc(x - 1, y - 1, 2, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     },
@@ -649,7 +668,7 @@ function serializeState() {
       hp:           tank.hp,
       hitFlash:     tank._hitFlash,
       recoil:       tank._recoil,
-      shells:       tank.shells.map(s => ({ x: s.x, y: s.y })),
+      shells:       tank.shells.map(s => ({ x: s.x, y: s.y, angle: s.angle })),
     },
     enemies: enemies.map(e => ({
       x:            e.x,
@@ -661,7 +680,7 @@ function serializeState() {
       dying:        e._dying,
       done:         e._done,
       role:         e.config.role,
-      shells:       e.shells.map(s => ({ x: s.x, y: s.y })),
+      shells:       e.shells.map(s => ({ x: s.x, y: s.y, angle: s.angle })),
     })),
     camera: { x: camera.x, y: camera.y },
   };
@@ -677,7 +696,7 @@ function applySnapshot(snap) {
   tank.hp           = snap.tank.hp;
   tank._hitFlash    = snap.tank.hitFlash;
   tank._recoil      = snap.tank.recoil;
-  tank.shells       = snap.tank.shells.map(s => makeShellProxy(s.x, s.y));
+  tank.shells       = snap.tank.shells.map(s => makeShellProxy(s.x, s.y, s.angle));
 
   while (enemies.length < snap.enemies.length) {
     const role = snap.enemies[enemies.length].role;
@@ -697,7 +716,7 @@ function applySnapshot(snap) {
     e._recoil      = es.recoil;
     e._dying       = es.dying;
     e._done        = es.done;
-    e.shells       = es.shells.map(s => makeShellProxy(s.x, s.y));
+    e.shells       = es.shells.map(s => makeShellProxy(s.x, s.y, s.angle));
   });
 
   camera.x = snap.camera.x;
