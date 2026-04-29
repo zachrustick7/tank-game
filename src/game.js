@@ -627,17 +627,17 @@ function makeShellProxy(x, y, angle) {
         const tx = x - Math.cos(angle) * PROXY_STEP * (PROXY_TRAIL - i);
         const ty = y - Math.sin(angle) * PROXY_STEP * (PROXY_TRAIL - i);
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = '#D4A020';
+        ctx.fillStyle = COLORS.effects.explosionMid;
         ctx.beginPath();
         ctx.arc(tx, ty, 2.5, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.globalAlpha = 1;
-      ctx.fillStyle = '#F0C030';
+      ctx.fillStyle = COLORS.effects.explosionOuter;
       ctx.beginPath();
       ctx.arc(x, y, 5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#FFF0A0';
+      ctx.fillStyle = COLORS.effects.explosionCore;
       ctx.beginPath();
       ctx.arc(x - 1, y - 1, 2, 0, Math.PI * 2);
       ctx.fill();
