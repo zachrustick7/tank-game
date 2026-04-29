@@ -3,7 +3,7 @@ import { net, connect, on as netOn, sendState, sendInput } from './network.js';
 import { Tank } from './tank.js';
 import { Enemy } from './enemy.js';
 import { ENEMY_CONFIGS } from './ai/enemyConfig.js';
-import { WORLD_W, WORLD_H, VOL_INTRO, PLAYER_HP } from './config.js';
+import { WORLD_W, WORLD_H, VOL_INTRO, PLAYER_HP, SHELL_RADIUS, TRACK_STAMP_DIST, TRACK_FADE_TIME, TRACK_MAX } from './config.js';
 import { tintSprite } from './sprite.js';
 import { COLORS } from './colors.js';
 import { loadSounds, setSoundMuted } from './audio.js';
@@ -614,36 +614,106 @@ function handleLevelSelectKey(e) {
 // ─── Multiplayer helpers ──────────────────────────────────────────────────────
 
 const PROXY_TRAIL = 8;
-const PROXY_STEP  = 7; // px between simulated trail points
+const PROXY_STEP  = 7;
 
-function makeShellProxy(x, y, angle) {
+function _drawTrail(ctx, x, y, angle, r, alpha) {
+  for (let i = 0; i < PROXY_TRAIL; i++) {
+    const a  = (i + 1) / PROXY_TRAIL * alpha;
+    const tx = x - Math.cos(angle) * PROXY_STEP * (PROXY_TRAIL - i);
+    const ty = y - Math.sin(angle) * PROXY_STEP * (PROXY_TRAIL - i);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = COLORS.effects.explosionMid;
+    ctx.beginPath();
+    ctx.arc(tx, ty, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function makeShellProxy(x, y, angle, type = 'shell', splitTimer) {
   return {
     x, y, dead: false,
     draw(ctx) {
       ctx.save();
-      // Simulated trail — project backwards along angle
-      for (let i = 0; i < PROXY_TRAIL; i++) {
-        const alpha = (i + 1) / PROXY_TRAIL * 0.4;
-        const tx = x - Math.cos(angle) * PROXY_STEP * (PROXY_TRAIL - i);
-        const ty = y - Math.sin(angle) * PROXY_STEP * (PROXY_TRAIL - i);
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = COLORS.effects.explosionMid;
+      if (type === 'splitter') {
+        const r       = SHELL_RADIUS * 2.2;
+        const elapsed = Math.max(0, 2.0 - (splitTimer ?? 0));
+        _drawTrail(ctx, x, y, angle, r * 0.7, 0.5);
+        const pulse = Math.sin(elapsed * (8 + elapsed * 22)) * 0.5 + 0.5;
+        ctx.globalAlpha = 0.18 + pulse * 0.32;
+        ctx.fillStyle = '#FF4400';
         ctx.beginPath();
-        ctx.arc(tx, ty, 2.5, 0, Math.PI * 2);
+        ctx.arc(x, y, r * (1.9 + elapsed * 1.4), 0, Math.PI * 2);
         ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = COLORS.effects.explosionOuter;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = COLORS.effects.explosionCore;
+        ctx.beginPath(); ctx.arc(x, y, r * 0.42, 0, Math.PI * 2); ctx.fill();
+      } else if (type === 'shrapnel') {
+        _drawTrail(ctx, x, y, angle, 1.5, 0.4);
+        ctx.fillStyle = COLORS.effects.explosionOuter;
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+      } else {
+        _drawTrail(ctx, x, y, angle, 2.5, 0.4);
+        ctx.fillStyle = COLORS.effects.explosionOuter;
+        ctx.beginPath(); ctx.arc(x, y, SHELL_RADIUS, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = COLORS.effects.explosionCore;
+        ctx.beginPath(); ctx.arc(x - 1, y - 1, SHELL_RADIUS * 0.4, 0, Math.PI * 2); ctx.fill();
       }
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = COLORS.effects.explosionOuter;
-      ctx.beginPath();
-      ctx.arc(x, y, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = COLORS.effects.explosionCore;
-      ctx.beginPath();
-      ctx.arc(x - 1, y - 1, 2, 0, Math.PI * 2);
-      ctx.fill();
       ctx.restore();
     },
   };
+}
+
+function makeMortarProxy(ms) {
+  const t     = Math.min(ms.elapsed / ms.flightTime, 1);
+  const sizeT = 1 - Math.abs(t * 2 - 1);
+  const r     = 4 + sizeT * 14;
+  return {
+    x: ms.x, y: ms.y, targetX: ms.targetX, targetY: ms.targetY,
+    dead: false, landed: false,
+    draw(ctx) {
+      ctx.save();
+      ctx.globalAlpha = 0.18 + sizeT * 0.18;
+      ctx.fillStyle = '#1A1A1A';
+      ctx.beginPath();
+      ctx.arc(ms.x + sizeT * 5, ms.y + sizeT * 5, r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      if (sizeT > 0.15) {
+        ctx.globalAlpha = sizeT * 0.28;
+        ctx.fillStyle = '#FF8800';
+        ctx.beginPath();
+        ctx.arc(ms.x, ms.y, r * 1.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      const red   = Math.round(55 + sizeT * 75);
+      const green = Math.round(42 + sizeT * 28);
+      ctx.fillStyle = `rgb(${red},${green},42)`;
+      ctx.beginPath(); ctx.arc(ms.x, ms.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 0.55 + sizeT * 0.45;
+      ctx.fillStyle = COLORS.effects.explosionCore;
+      ctx.beginPath(); ctx.arc(ms.x, ms.y, r * 0.34, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    },
+  };
+}
+
+function stampTracks(entity, newX, newY, newAngle, dt) {
+  const moved = Math.hypot(newX - entity._prevX, newY - entity._prevY);
+  entity._trackAccum += moved;
+  if (entity._trackAccum >= TRACK_STAMP_DIST) {
+    entity._tracks.push({ x: newX, y: newY, angle: newAngle, life: 1 });
+    if (entity._tracks.length > TRACK_MAX) entity._tracks.shift();
+    entity._trackAccum = 0;
+  }
+  entity._prevX = newX;
+  entity._prevY = newY;
+  const fadeRate = 1 / TRACK_FADE_TIME;
+  for (const t of entity._tracks) t.life -= fadeRate * dt;
+  entity._tracks = entity._tracks.filter(t => t.life > 0);
 }
 
 function makeDriverInput(local) {
@@ -658,6 +728,14 @@ function makeDriverInput(local) {
   };
 }
 
+function serializeShell(s) {
+  return {
+    x: s.x, y: s.y, angle: s.angle,
+    type:        s.splitTimer !== undefined ? 'splitter' : s.radius <= 3 ? 'shrapnel' : 'shell',
+    splitTimer:  s.splitTimer,
+  };
+}
+
 function serializeState() {
   return {
     tank: {
@@ -668,7 +746,7 @@ function serializeState() {
       hp:           tank.hp,
       hitFlash:     tank._hitFlash,
       recoil:       tank._recoil,
-      shells:       tank.shells.map(s => ({ x: s.x, y: s.y, angle: s.angle })),
+      shells:       tank.shells.map(serializeShell),
     },
     enemies: enemies.map(e => ({
       x:            e.x,
@@ -679,16 +757,35 @@ function serializeState() {
       recoil:       e._recoil,
       dying:        e._dying,
       done:         e._done,
+      deathTimer:   e._deathTimer,
       role:         e.config.role,
-      shells:       e.shells.map(s => ({ x: s.x, y: s.y, angle: s.angle })),
+      state:        e._state,
+      phase:        e._phase,
+      lockedAim:    e._lockedAim,
+      time:         e._time,
+      flaming:      e._flaming,
+      playerX:      e._playerX,
+      playerY:      e._playerY,
+      shells:       e.shells.map(serializeShell),
+      mortarShells: e._mortarShells.map(ms => ({
+        x: ms.x, y: ms.y,
+        startX: ms.startX, startY: ms.startY,
+        targetX: ms.targetX, targetY: ms.targetY,
+        flightTime: ms.flightTime, elapsed: ms.elapsed,
+      })),
+      mortarTargetX: e._mortarTargetX,
+      mortarTargetY: e._mortarTargetY,
+      blastFlashes:  e._blastFlashes,
     })),
     camera: { x: camera.x, y: camera.y },
   };
 }
 
 let _snapCount = 0;
-function applySnapshot(snap) {
+function applySnapshot(snap, dt) {
   if (++_snapCount === 1) console.log('[gunner] first snapshot, tank at', snap.tank.x.toFixed(0), snap.tank.y.toFixed(0));
+
+  stampTracks(tank, snap.tank.x, snap.tank.y, snap.tank.bodyAngle, dt);
   tank.x            = snap.tank.x;
   tank.y            = snap.tank.y;
   tank.bodyAngle    = snap.tank.bodyAngle;
@@ -696,7 +793,7 @@ function applySnapshot(snap) {
   tank.hp           = snap.tank.hp;
   tank._hitFlash    = snap.tank.hitFlash;
   tank._recoil      = snap.tank.recoil;
-  tank.shells       = snap.tank.shells.map(s => makeShellProxy(s.x, s.y, s.angle));
+  tank.shells       = snap.tank.shells.map(s => makeShellProxy(s.x, s.y, s.angle, s.type, s.splitTimer));
 
   while (enemies.length < snap.enemies.length) {
     const role = snap.enemies[enemies.length].role;
@@ -707,16 +804,29 @@ function applySnapshot(snap) {
   }
 
   snap.enemies.forEach((es, i) => {
-    const e        = enemies[i];
-    e.x            = es.x;
-    e.y            = es.y;
-    e.bodyAngle    = es.bodyAngle;
-    e.barrelOffset = es.barrelOffset;
-    e.hp           = es.hp;
-    e._recoil      = es.recoil;
-    e._dying       = es.dying;
-    e._done        = es.done;
-    e.shells       = es.shells.map(s => makeShellProxy(s.x, s.y, s.angle));
+    const e          = enemies[i];
+    stampTracks(e, es.x, es.y, es.bodyAngle, dt);
+    e.x              = es.x;
+    e.y              = es.y;
+    e.bodyAngle      = es.bodyAngle;
+    e.barrelOffset   = es.barrelOffset;
+    e.hp             = es.hp;
+    e._recoil        = es.recoil;
+    e._dying         = es.dying;
+    e._done          = es.done;
+    e._deathTimer    = es.deathTimer;
+    e._state         = es.state;
+    e._phase         = es.phase;
+    e._lockedAim     = es.lockedAim;
+    e._time          = es.time;
+    e._flaming       = es.flaming;
+    e._playerX       = es.playerX;
+    e._playerY       = es.playerY;
+    e.shells         = es.shells.map(s => makeShellProxy(s.x, s.y, s.angle, s.type, s.splitTimer));
+    e._mortarShells  = (es.mortarShells ?? []).map(makeMortarProxy);
+    e._mortarTargetX = es.mortarTargetX;
+    e._mortarTargetY = es.mortarTargetY;
+    e._blastFlashes  = es.blastFlashes ?? [];
   });
 
   camera.x = snap.camera.x;
@@ -767,7 +877,7 @@ function loop(timestamp) {
     });
     input.clearPressed();
     if (!net.snapshot && Math.random() < 0.01) console.log('[gunner] waiting for snapshot...');
-    if (net.snapshot) applySnapshot(net.snapshot);
+    if (net.snapshot) applySnapshot(net.snapshot, dt);
 
   } else {
     // Driver or solo: run full physics simulation
