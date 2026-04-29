@@ -18,10 +18,108 @@
       display: block;
       image-rendering: pixelated;
     }
+
+    /* ── Multiplayer lobby overlay ─────────────────────────── */
+    #lobby {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.88);
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      z-index: 10;
+    }
+    #lobby.active { display: flex; }
+
+    .lobby-panel {
+      background: #2F2F2F;
+      border: 2px solid #4F6D5A;
+      border-radius: 12px;
+      padding: 40px 52px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      min-width: 360px;
+    }
+    .lobby-title {
+      font-size: 30px;
+      font-weight: bold;
+      color: #F2E8CF;
+      letter-spacing: 4px;
+    }
+    .lobby-sub {
+      font-size: 13px;
+      color: #A3BFA8;
+      text-align: center;
+      line-height: 1.5;
+    }
+    #lobby-code {
+      font-family: monospace;
+      font-size: 26px;
+      font-weight: bold;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 8px;
+      width: 100%;
+      background: #1F1F1F;
+      color: #F2E8CF;
+      border: 2px solid #4F6D5A;
+      border-radius: 6px;
+      padding: 12px 16px;
+      outline: none;
+    }
+    #lobby-code:focus { border-color: #D0A85C; }
+    #lobby-join {
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      width: 100%;
+      background: #4F6D5A;
+      color: #F2E8CF;
+      border: none;
+      border-radius: 6px;
+      padding: 13px;
+      cursor: pointer;
+    }
+    #lobby-join:hover:not(:disabled) { background: #6B8F71; }
+    #lobby-join:disabled { background: #2a2a2a; color: #555; cursor: default; }
+    #lobby-status {
+      font-size: 14px;
+      color: #A3BFA8;
+      text-align: center;
+      min-height: 20px;
+      line-height: 1.5;
+    }
+    #lobby-status.role-driver { color: #7ED957; }
+    #lobby-status.role-gunner { color: #7DA2A9; }
+    #lobby-status.error       { color: #FF6B6B; }
+    .lobby-esc {
+      font-size: 12px;
+      color: #555;
+    }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
+
+  <div id="lobby">
+    <div class="lobby-panel">
+      <div class="lobby-title">MULTIPLAYER</div>
+      <div class="lobby-sub">
+        Both players enter the same room code.<br>
+        First to join drives. Second aims and fires.
+      </div>
+      <input id="lobby-code" type="text" maxlength="8"
+             placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
+      <button id="lobby-join">JOIN ROOM</button>
+      <div id="lobby-status"></div>
+      <div class="lobby-esc">ESC — back to title</div>
+    </div>
+  </div>
+
   <script type="module" src="src/game.js"></script>
 </body>
 </html>
