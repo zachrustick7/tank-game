@@ -667,7 +667,9 @@ function serializeState() {
   };
 }
 
+let _snapCount = 0;
 function applySnapshot(snap) {
+  if (++_snapCount === 1) console.log('[gunner] first snapshot, tank at', snap.tank.x.toFixed(0), snap.tank.y.toFixed(0));
   tank.x            = snap.tank.x;
   tank.y            = snap.tank.y;
   tank.bodyAngle    = snap.tank.bodyAngle;
@@ -745,6 +747,7 @@ function loop(timestamp) {
       fire:  input.held('ArrowUp') || input.held('Space'),
     });
     input.clearPressed();
+    if (!net.snapshot && Math.random() < 0.01) console.log('[gunner] waiting for snapshot...');
     if (net.snapshot) applySnapshot(net.snapshot);
 
   } else {
@@ -784,7 +787,10 @@ function loop(timestamp) {
     resolveBodyCollisions([tank, ...enemies]);
 
     // Driver: broadcast authoritative state to gunner
-    if (net.role === 'driver' && net.ready) sendState(serializeState());
+    if (net.role === 'driver' && net.ready) {
+      if (!window._driverSent) { window._driverSent = true; console.log('[driver] sending first state'); }
+      sendState(serializeState());
+    }
   }
 
   // ── Draw ────────────────────────────────────────────────────────────────
