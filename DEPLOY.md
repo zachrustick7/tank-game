@@ -1,9 +1,11 @@
 # Deploying Tank Game
 
-**Live URL:** https://mellifluous-platypus-26fca0.netlify.app  
+**Live URL (game):** https://tank-gamee.netlify.app  
+**WebSocket relay:** wss://tank-game-production-06b0.up.railway.app  
 **GitHub:** https://github.com/zachrustick7/tank-game
 
-Hosted on **Netlify** (free tier). Every push to `main` on GitHub auto-deploys.
+The **game frontend** is hosted on **Netlify** (free tier) — every push to `main` auto-deploys.  
+The **multiplayer relay server** (`server/`) is hosted on **Railway** (free tier) — every push to `main` also auto-deploys the server, since the root directory is set to `server/`.
 
 ---
 
@@ -71,14 +73,38 @@ Opens at http://localhost:3333. The browser reloads whenever you save a file.
 
 ---
 
+## Multiplayer Relay Server
+
+The relay server lives in `server/` and is deployed separately on Railway.
+
+- **Railway project:** harmonious-possibility
+- **Service:** tank-game
+- **Public WebSocket URL:** `wss://tank-game-production-06b0.up.railway.app`
+- **Root directory setting:** `server` (set in Railway service → Settings → Source)
+- **Auto-deploys:** yes, triggers on every push to `main`
+
+The WS URL is hardcoded in `src/game.js`:
+```js
+const WS_URL = window.location.hostname === 'localhost'
+  ? 'ws://localhost:8080'
+  : 'wss://tank-game-production-06b0.up.railway.app';
+```
+
+To run the relay locally:
+```bash
+cd server
+npm install
+npm run dev   # uses node --watch for auto-reload
+```
+
+---
+
 ## File Structure (for reference)
 
 ```
 tank-game/
 ├── index.html          # entry point
 ├── assets/             # Figma sprite exports (PNG)
-│   ├── tank_body.png
-│   └── tank_barrel.png
 ├── src/
 │   ├── config.js       # all tunable constants
 │   ├── colors.js       # master color palette
@@ -86,10 +112,15 @@ tank-game/
 │   ├── tank.js         # player tank
 │   ├── enemy.js        # enemy base class + state machine
 │   ├── shell.js        # projectile
+│   ├── shell.js        # projectile (Shell, SplitterShell, MortarShell)
 │   ├── input.js        # keyboard handling
+│   ├── network.js      # WebSocket client (multiplayer)
 │   ├── sprite.js       # tintSprite() utility
 │   └── ai/
 │       └── enemyConfig.js  # data-driven enemy role configs
+├── server/
+│   ├── server.js       # WebSocket relay server (Node.js + ws)
+│   └── package.json
 ├── netlify.toml        # Netlify deploy config
 └── DEPLOY.md           # this file
 ```
