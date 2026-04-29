@@ -42,10 +42,10 @@ wss.on('connection', (ws, req) => {
   }
 
   // ── Relay messages to the peer ───────────────────────────────────────────
-  ws.on('message', (raw) => {
+  ws.on('message', (raw, isBinary) => {
     const peer = getPeer(ws);
     if (peer?.readyState === 1 /* OPEN */) {
-      peer.send(raw); // forward raw bytes — no parse overhead on the server
+      peer.send(raw, { binary: isBinary }); // preserve text/binary framing
     }
   });
 
