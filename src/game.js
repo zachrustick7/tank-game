@@ -1,4 +1,5 @@
 import { Input } from './input.js';
+import { net, connect, on as netOn, sendState, sendInput } from './network.js';
 import { Tank } from './tank.js';
 import { Enemy } from './enemy.js';
 import { ENEMY_CONFIGS } from './ai/enemyConfig.js';
@@ -31,6 +32,11 @@ function loadImage(src) {
     img.src = src;
   });
 }
+
+// WebSocket relay URL — update the production value when the server is deployed
+const WS_URL = window.location.hostname === 'localhost'
+  ? 'ws://localhost:8080'
+  : 'wss://tank-game-production-06b0.up.railway.app';
 
 // ─── Levels ───────────────────────────────────────────────────────────────────
 
@@ -389,7 +395,7 @@ function drawTitle() {
   ctx.fillStyle = COLORS.green[500];
   ctx.fillRect(0, 0, WORLD_W, WORLD_H);
 
-  const pw = 500, ph = 220;
+  const pw = 500, ph = 260;
   const px = (WORLD_W - pw) / 2;
   const py = (WORLD_H - ph) / 2;
 
@@ -406,6 +412,10 @@ function drawTitle() {
   ctx.fillStyle = COLORS.sand[300];
   ctx.font = 'bold 18px monospace';
   ctx.fillText('press any key to continue', WORLD_W / 2, py + 150);
+
+  ctx.fillStyle = COLORS.neutral.mid;
+  ctx.font = '14px monospace';
+  ctx.fillText('M — multiplayer', WORLD_W / 2, py + 188);
 
   ctx.textAlign = 'left';
   drawSoundToggle();
@@ -565,7 +575,30 @@ function drawSoundToggle() {
 
 // ─── Input handlers ───────────────────────────────────────────────────────────
 
-function handleTitleKey() {
+const lobbyEl   = document.getElementById('lobby');
+const codeInput = document.getElementById('lobby-code');
+const joinBtn   = document.getElementById('lobby-join');
+const statusEl  = document.getElementById('lobby-status');
+
+function showLobby() {
+  screen = 'lobby';
+  lobbyEl.classList.add('active');
+  codeInput.value = '';
+  statusEl.textContent = '';
+  statusEl.className = '';
+  joinBtn.disabled = false;
+  codeInput.focus();
+}
+
+function hideLobby() {
+  lobbyEl.classList.remove('active');
+}
+
+function handleTitleKey(e) {
+  if (e?.code === 'KeyM') {
+    showLobby();
+    return;
+  }
   screen = 'level_select';
   loadSounds();
   setSoundMuted(soundMuted); // sync mute state into audio module on first load
@@ -576,6 +609,97 @@ function handleLevelSelectKey(e) {
   if (e.code === 'ArrowUp')   selectedLevel = Math.max(0, selectedLevel - 1);
   if (e.code === 'ArrowDown') selectedLevel = Math.min(LEVELS.length - 1, selectedLevel + 1);
   if (e.code === 'Enter' || e.code === 'Space') startLevel(selectedLevel);
+}
+
+// ─── Multiplayer helpers ──────────────────────────────────────────────────────
+
+function makeShellProxy(x, y) {
+  return {
+    x, y, dead: false,
+    draw(ctx) {
+      ctx.save();
+      ctx.fillStyle = '#F5E060';
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    },
+  };
+}
+
+function makeDriverInput(local) {
+  return {
+    held(code) {
+      if (code === 'ArrowLeft')                   return net.gunnerInput.left;
+      if (code === 'ArrowRight')                  return net.gunnerInput.right;
+      if (code === 'ArrowUp' || code === 'Space') return net.gunnerInput.fire;
+      return local.held(code);
+    },
+    clearPressed() { local.clearPressed(); },
+  };
+}
+
+function serializeState() {
+  return {
+    tank: {
+      x:            tank.x,
+      y:            tank.y,
+      bodyAngle:    tank.bodyAngle,
+      barrelOffset: tank.barrelOffset,
+      hp:           tank.hp,
+      hitFlash:     tank._hitFlash,
+      recoil:       tank._recoil,
+      shells:       tank.shells.map(s => ({ x: s.x, y: s.y })),
+    },
+    enemies: enemies.map(e => ({
+      x:            e.x,
+      y:            e.y,
+      bodyAngle:    e.bodyAngle,
+      barrelOffset: e.barrelOffset,
+      hp:           e.hp,
+      recoil:       e._recoil,
+      dying:        e._dying,
+      done:         e._done,
+      role:         e.config.role,
+      shells:       e.shells.map(s => ({ x: s.x, y: s.y })),
+    })),
+    camera: { x: camera.x, y: camera.y },
+  };
+}
+
+function applySnapshot(snap) {
+  tank.x            = snap.tank.x;
+  tank.y            = snap.tank.y;
+  tank.bodyAngle    = snap.tank.bodyAngle;
+  tank.barrelOffset = snap.tank.barrelOffset;
+  tank.hp           = snap.tank.hp;
+  tank._hitFlash    = snap.tank.hitFlash;
+  tank._recoil      = snap.tank.recoil;
+  tank.shells       = snap.tank.shells.map(s => makeShellProxy(s.x, s.y));
+
+  while (enemies.length < snap.enemies.length) {
+    const role = snap.enemies[enemies.length].role;
+    enemies.push(new Enemy(0, 0, ENEMY_CONFIGS[role] ?? ENEMY_CONFIGS.infantry));
+  }
+  if (enemies.length > snap.enemies.length) {
+    enemies = enemies.slice(0, snap.enemies.length);
+  }
+
+  snap.enemies.forEach((es, i) => {
+    const e        = enemies[i];
+    e.x            = es.x;
+    e.y            = es.y;
+    e.bodyAngle    = es.bodyAngle;
+    e.barrelOffset = es.barrelOffset;
+    e.hp           = es.hp;
+    e._recoil      = es.recoil;
+    e._dying       = es.dying;
+    e._done        = es.done;
+    e.shells       = es.shells.map(s => makeShellProxy(s.x, s.y));
+  });
+
+  camera.x = snap.camera.x;
+  camera.y = snap.camera.y;
 }
 
 // ─── Game loop ────────────────────────────────────────────────────────────────
@@ -599,6 +723,12 @@ function loop(timestamp) {
     return;
   }
 
+  if (screen === 'lobby') {
+    drawTitle();  // rendered behind the HTML overlay
+    requestAnimationFrame(loop);
+    return;
+  }
+
   if (screen === 'dead') {
     drawDeadScreen();
     requestAnimationFrame(loop);
@@ -607,35 +737,55 @@ function loop(timestamp) {
 
   // ── Update ──────────────────────────────────────────────────────────────
 
-  tank.update(dt, input);
-  input.clearPressed();
+  if (net.role === 'gunner' && net.ready) {
+    // Gunner: relay local barrel/fire input to driver, render from snapshot
+    sendInput({
+      left:  input.held('ArrowLeft'),
+      right: input.held('ArrowRight'),
+      fire:  input.held('ArrowUp') || input.held('Space'),
+    });
+    input.clearPressed();
+    if (net.snapshot) applySnapshot(net.snapshot);
 
-  // Clamp player to level bounds
-  const b  = activeLevel?.bounds ?? { minX: 0, maxX: WORLD_W, minY: 0, maxY: WORLD_H };
-  const hw = tank.bodyW / 2, hh = tank.bodyH / 2;
-  tank.x = Math.max(b.minX + hw, Math.min(b.maxX - hw, tank.x));
-  tank.y = Math.max(b.minY + hh, Math.min(b.maxY - hh, tank.y));
+  } else {
+    // Driver or solo: run full physics simulation
+    const effectiveInput = (net.role === 'driver' && net.ready)
+      ? makeDriverInput(input)
+      : input;
 
-  for (const enemy of enemies) enemy.update(dt, tank, enemies);
+    tank.update(dt, effectiveInput);
+    input.clearPressed();
 
-  // Clamp all enemies to level bounds (locomotion + impulse both land here)
-  for (const enemy of enemies) {
-    const er = enemy.collisionRadius;
-    enemy.x = Math.max(b.minX + er, Math.min(b.maxX - er, enemy.x));
-    enemy.y = Math.max(b.minY + er, Math.min(b.maxY - er, enemy.y));
+    // Clamp player to level bounds
+    const b  = activeLevel?.bounds ?? { minX: 0, maxX: WORLD_W, minY: 0, maxY: WORLD_H };
+    const hw = tank.bodyW / 2, hh = tank.bodyH / 2;
+    tank.x = Math.max(b.minX + hw, Math.min(b.maxX - hw, tank.x));
+    tank.y = Math.max(b.minY + hh, Math.min(b.maxY - hh, tank.y));
+
+    for (const enemy of enemies) enemy.update(dt, tank, enemies);
+
+    // Clamp all enemies to level bounds (locomotion + impulse both land here)
+    for (const enemy of enemies) {
+      const er = enemy.collisionRadius;
+      enemy.x = Math.max(b.minX + er, Math.min(b.maxX - er, enemy.x));
+      enemy.y = Math.max(b.minY + er, Math.min(b.maxY - er, enemy.y));
+    }
+
+    // Projectile hit resolution — applies damage + impulse, marks shells dead
+    processProjectileHits();
+
+    // Remove enemies whose death animation has fully completed
+    enemies = enemies.filter(e => !e._done);
+
+    // Transition to death screen
+    if (!tank.alive) { screen = 'dead'; requestAnimationFrame(loop); return; }
+
+    // Body overlap resolution
+    resolveBodyCollisions([tank, ...enemies]);
+
+    // Driver: broadcast authoritative state to gunner
+    if (net.role === 'driver' && net.ready) sendState(serializeState());
   }
-
-  // Projectile hit resolution — applies damage + impulse, marks shells dead
-  processProjectileHits();
-
-  // Remove enemies whose death animation has fully completed
-  enemies = enemies.filter(e => !e._done);
-
-  // Transition to death screen
-  if (!tank.alive) { screen = 'dead'; requestAnimationFrame(loop); return; }
-
-  // Body overlap resolution
-  resolveBodyCollisions([tank, ...enemies]);
 
   // ── Draw ────────────────────────────────────────────────────────────────
 
@@ -698,8 +848,9 @@ async function init() {
   }
 
   window.addEventListener('keydown', e => {
-    if (screen === 'title')        { handleTitleKey(); return; }
+    if (screen === 'title')        { handleTitleKey(e); return; }
     if (screen === 'level_select') { handleLevelSelectKey(e); return; }
+    if (screen === 'lobby' && e.code === 'Escape') { hideLobby(); screen = 'title'; return; }
     if (screen === 'dead')         { screen = 'title'; return; }
   });
 
@@ -713,6 +864,46 @@ async function init() {
       setSoundMuted(soundMuted);
       introAudio.muted = soundMuted;
     }
+  });
+
+  // ── Lobby UI wiring ───────────────────────────────────────────────────────
+
+  function joinRoom() {
+    const code = codeInput.value.trim().toUpperCase();
+    if (code.length < 1) return;
+    joinBtn.disabled = true;
+    statusEl.className = '';
+    statusEl.textContent = 'Connecting…';
+    connect(code, WS_URL);
+  }
+
+  netOn('role', role => {
+    statusEl.className = `role-${role}`;
+    statusEl.textContent = role === 'driver'
+      ? 'You drive. Waiting for gunner…'
+      : 'You aim & fire. Waiting for driver…';
+  });
+
+  netOn('ready', () => {
+    statusEl.textContent = 'Both players connected! Starting…';
+    setTimeout(() => {
+      hideLobby();
+      loadSounds();
+      setSoundMuted(soundMuted);
+      startLevel(selectedLevel);
+    }, 800);
+  });
+
+  netOn('peer_disconnected', () => {
+    statusEl.className = 'error';
+    statusEl.textContent = 'Other player disconnected.';
+    joinBtn.disabled = false;
+  });
+
+  joinBtn.addEventListener('click', joinRoom);
+
+  codeInput.addEventListener('keydown', e => {
+    if (e.code === 'Enter') joinRoom();
   });
 
   requestAnimationFrame(loop);
