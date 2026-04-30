@@ -339,6 +339,15 @@ const assets = {};
 let enemies  = [];
 let camera   = { x: 0, y: 0 };
 
+// ─── Screen transition helper ─────────────────────────────────────────────────
+
+let _returnTimeout = null;
+
+function scheduleReturn(delay) {
+  clearTimeout(_returnTimeout);
+  _returnTimeout = setTimeout(() => { screen = 'level_select'; }, delay);
+}
+
 // ─── Body collision resolution ────────────────────────────────────────────────
 
 function resolveBodyCollisions(entities) {
@@ -522,6 +531,28 @@ function drawHUD() {
   ctx.restore();
 }
 
+// ─── Draw: win overlay ────────────────────────────────────────────────────────
+
+function drawWinScreen() {
+  if (activeLevel?.drawBackground) activeLevel.drawBackground(ctx);
+  else drawGround();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.accent.gold;
+  ctx.font = 'bold 58px monospace';
+  ctx.fillText('LEVEL COMPLETE', WORLD_W / 2, WORLD_H / 2 - 20);
+
+  ctx.fillStyle = COLORS.sand[300];
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText('Returning to level select…', WORLD_W / 2, WORLD_H / 2 + 44);
+
+  ctx.textAlign = 'left';
+  drawSoundToggle();
+}
+
 // ─── Draw: death overlay ──────────────────────────────────────────────────────
 
 function drawDeadScreen() {
@@ -538,7 +569,7 @@ function drawDeadScreen() {
 
   ctx.fillStyle = COLORS.sand[300];
   ctx.font = 'bold 18px monospace';
-  ctx.fillText('press any key to return', WORLD_W / 2, WORLD_H / 2 + 44);
+  ctx.fillText('Returning to level select…', WORLD_W / 2, WORLD_H / 2 + 44);
 
   ctx.textAlign = 'left';
   drawSoundToggle();
@@ -936,6 +967,12 @@ function loop(timestamp) {
     return;
   }
 
+  if (screen === 'win') {
+    drawWinScreen();
+    requestAnimationFrame(loop);
+    return;
+  }
+
   // ── Update ──────────────────────────────────────────────────────────────
 
   if (net.role === 'gunner' && net.ready) {
@@ -978,8 +1015,23 @@ function loop(timestamp) {
     // Remove enemies whose death animation has fully completed
     enemies = enemies.filter(e => !e._done);
 
-    // Transition to death screen
-    if (!tank.alive) { screen = 'dead'; requestAnimationFrame(loop); return; }
+    // Win: all enemies cleared
+    if (enemies.length === 0) {
+      screen = 'win';
+      if (net.role === 'driver' && net.ready) sendMsg({ type: 'game_over', result: 'win' });
+      scheduleReturn(3000);
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    // Lose: player destroyed
+    if (!tank.alive) {
+      screen = 'dead';
+      if (net.role === 'driver' && net.ready) sendMsg({ type: 'game_over', result: 'lose' });
+      scheduleReturn(3000);
+      requestAnimationFrame(loop);
+      return;
+    }
 
     // Body overlap resolution
     resolveBodyCollisions([tank, ...enemies]);
@@ -1056,7 +1108,7 @@ async function init() {
     if (screen === 'level_select') { handleLevelSelectKey(e); return; }
     if (screen === 'lobby'       && e.code === 'Escape') { hideLobby(); screen = 'title'; return; }
     if (screen === 'role_select' && e.code === 'Escape') { hideRoleSelect(); screen = 'title'; return; }
-    if (screen === 'dead')         { screen = 'title'; return; }
+    if (screen === 'dead' || screen === 'win') { clearTimeout(_returnTimeout); screen = 'level_select'; return; }
   });
 
   canvas.addEventListener('click', e => {
@@ -1148,6 +1200,11 @@ async function init() {
 
   netOn('level_choice', level => {
     startLevel(level);
+  });
+
+  netOn('game_over', result => {
+    screen = result === 'win' ? 'win' : 'dead';
+    scheduleReturn(3000);
   });
 
   joinBtn.addEventListener('click', joinRoom);

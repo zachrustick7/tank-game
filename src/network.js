@@ -88,6 +88,10 @@ export function connect(roomCode, wsUrl) {
       case 'level_choice':
         _emit('level_choice', msg.level);
         break;
+
+      case 'game_over':
+        _emit('game_over', msg.result);
+        break;
     }
   };
 
