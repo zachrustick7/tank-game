@@ -11,6 +11,7 @@ import { resolveProjectileHits } from './physics/collision.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
 
 function resize() {
   const scaleX = window.innerWidth / WORLD_W;
@@ -927,6 +928,7 @@ function loop(timestamp) {
   updateCamera();
 
   ctx.save();
+  ctx.imageSmoothingEnabled = false;
   ctx.translate(-camera.x, -camera.y);
 
   if (activeLevel?.drawBackground) activeLevel.drawBackground(ctx);
