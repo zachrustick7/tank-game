@@ -33,6 +33,7 @@ export const net = {
   _ws: null,
 };
 
+
 export function connect(roomCode, wsUrl) {
   const url = `${wsUrl}?room=${roomCode.toUpperCase()}`;
   const ws  = new WebSocket(url);
@@ -75,6 +76,18 @@ export function connect(roomCode, wsUrl) {
         // Gunner receives driver's game state snapshot
         net.snapshot = msg.data;
         break;
+
+      case 'role_pref':
+        _emit('role_pref', msg.role);
+        break;
+
+      case 'role_confirm':
+        _emit('role_confirm');
+        break;
+
+      case 'level_choice':
+        _emit('level_choice', msg.level);
+        break;
     }
   };
 
@@ -90,15 +103,18 @@ export function connect(roomCode, wsUrl) {
 }
 
 // ── Driver → Gunner: full game state snapshot ─────────────────────────────────
-// Call once per frame (or at a fixed tick rate like 20hz).
 export function sendState(data) {
   _send({ type: 'state', data });
 }
 
 // ── Gunner → Driver: key state ────────────────────────────────────────────────
-// Call whenever input changes (or every frame — server just relays it).
 export function sendInput(keys) {
   _send({ type: 'input', keys });
+}
+
+// ── Generic relay message (role negotiation, level choice, etc.) ──────────────
+export function sendMsg(obj) {
+  _send(obj);
 }
 
 // ── Event emitter ─────────────────────────────────────────────────────────────

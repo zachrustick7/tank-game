@@ -100,6 +100,61 @@
       font-size: 12px;
       color: #555;
     }
+
+    /* ── Role select overlay ───────────────────────────────── */
+    #role-select {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.88);
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      z-index: 10;
+    }
+    #role-select.active { display: flex; }
+
+    .role-row {
+      display: flex;
+      gap: 16px;
+      width: 100%;
+    }
+    .role-btn {
+      flex: 1;
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      background: #1F1F1F;
+      color: #A3BFA8;
+      border: 2px solid #4F6D5A;
+      border-radius: 8px;
+      padding: 18px 8px;
+      cursor: pointer;
+      text-align: center;
+      line-height: 1.6;
+    }
+    .role-btn small { font-size: 11px; font-weight: normal; letter-spacing: 0; color: #6B8F71; }
+    .role-btn:hover { border-color: #6B8F71; background: #2a2a2a; }
+    .role-btn.selected { border-color: #D0A85C; background: #2F2F2F; color: #F2E8CF; }
+    .role-btn.selected small { color: #A3BFA8; }
+    #role-confirm-btn {
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      width: 100%;
+      background: #4F6D5A;
+      color: #F2E8CF;
+      border: none;
+      border-radius: 6px;
+      padding: 13px;
+      cursor: pointer;
+    }
+    #role-confirm-btn:hover:not(:disabled) { background: #6B8F71; }
+    #role-confirm-btn:disabled { background: #2a2a2a; color: #555; cursor: default; }
+    #role-peer-display { min-height: 20px; }
+    #role-status-msg   { min-height: 20px; color: #D0A85C; }
   </style>
 </head>
 <body>
@@ -110,12 +165,34 @@
       <div class="lobby-title">MULTIPLAYER</div>
       <div class="lobby-sub">
         Both players enter the same room code.<br>
-        First to join drives. Second aims and fires.
+        You'll choose your roles after connecting.
       </div>
       <input id="lobby-code" type="text" maxlength="8"
              placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
       <button id="lobby-join">JOIN ROOM</button>
       <div id="lobby-status"></div>
+      <div class="lobby-esc">ESC — back to title</div>
+    </div>
+  </div>
+
+  <div id="role-select">
+    <div class="lobby-panel">
+      <div class="lobby-title">CHOOSE ROLE</div>
+      <div class="lobby-sub">
+        Pick your role. If both pick the same,<br>
+        a coin flip decides who gets it.
+      </div>
+      <div class="role-row">
+        <button id="role-driver-btn" class="role-btn">
+          DRIVER<br><small>WASD — move &amp; steer</small>
+        </button>
+        <button id="role-gunner-btn" class="role-btn">
+          GUNNER<br><small>← → aim &nbsp;·&nbsp; ↑ fire</small>
+        </button>
+      </div>
+      <div id="role-peer-display" class="lobby-sub">Waiting for other player…</div>
+      <button id="role-confirm-btn" disabled>CONFIRM</button>
+      <div id="role-status-msg" class="lobby-sub"></div>
       <div class="lobby-esc">ESC — back to title</div>
     </div>
   </div>

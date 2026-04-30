@@ -1,5 +1,5 @@
 import { Input } from './input.js';
-import { net, connect, on as netOn, sendState, sendInput } from './network.js';
+import { net, connect, on as netOn, sendState, sendInput, sendMsg } from './network.js';
 import { Tank } from './tank.js';
 import { Enemy } from './enemy.js';
 import { ENEMY_CONFIGS } from './ai/enemyConfig.js';
@@ -416,13 +416,13 @@ function drawTitle() {
   ctx.font = 'bold 64px monospace';
   ctx.fillText('TANK GAME', WORLD_W / 2, py + 90);
 
-  ctx.fillStyle = COLORS.sand[300];
-  ctx.font = 'bold 18px monospace';
-  ctx.fillText('press any key to continue', WORLD_W / 2, py + 150);
+  ctx.fillStyle = COLORS.accent.gold;
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText('S — SINGLEPLAYER', WORLD_W / 2, py + 150);
 
   ctx.fillStyle = COLORS.neutral.mid;
-  ctx.font = '14px monospace';
-  ctx.fillText('M — multiplayer', WORLD_W / 2, py + 188);
+  ctx.font = 'bold 20px monospace';
+  ctx.fillText('M — MULTIPLAYER', WORLD_W / 2, py + 184);
 
   ctx.textAlign = 'left';
   drawSoundToggle();
@@ -477,9 +477,13 @@ function drawLevelSelect() {
     });
   });
 
-  ctx.fillStyle = COLORS.accent.gold;
+  const isGunner = net.role === 'gunner' && net.ready;
+  ctx.fillStyle = isGunner ? COLORS.neutral.mid : COLORS.accent.gold;
   ctx.font      = 'bold 16px monospace';
-  ctx.fillText('press ENTER to play', WORLD_W / 2, cardY + LEVELS.length * gap + 20);
+  ctx.fillText(
+    isGunner ? 'Waiting for driver to choose level…' : 'press ENTER to play',
+    WORLD_W / 2, cardY + LEVELS.length * gap + 20
+  );
 
   ctx.textAlign = 'left';
   drawSoundToggle();
@@ -601,21 +605,83 @@ function hideLobby() {
   lobbyEl.classList.remove('active');
 }
 
+// ─── Role select UI ───────────────────────────────────────────────────────────
+
+const roleSelectEl  = document.getElementById('role-select');
+const roleDriverBtn = document.getElementById('role-driver-btn');
+const roleGunnerBtn = document.getElementById('role-gunner-btn');
+const rolePeerDisp  = document.getElementById('role-peer-display');
+const roleConfirmBtn = document.getElementById('role-confirm-btn');
+const roleStatusMsg  = document.getElementById('role-status-msg');
+
+let myRolePref    = null;
+let peerRolePref  = null;
+let myConfirmed   = false;
+let peerConfirmed = false;
+
+function showRoleSelect() {
+  screen = 'role_select';
+  myRolePref = null;
+  peerRolePref = null;
+  myConfirmed = false;
+  peerConfirmed = false;
+  roleDriverBtn.classList.remove('selected');
+  roleGunnerBtn.classList.remove('selected');
+  roleDriverBtn.disabled = false;
+  roleGunnerBtn.disabled = false;
+  rolePeerDisp.textContent = 'Waiting for other player…';
+  roleConfirmBtn.disabled = true;
+  roleStatusMsg.textContent = '';
+  roleSelectEl.classList.add('active');
+}
+
+function hideRoleSelect() {
+  roleSelectEl.classList.remove('active');
+}
+
+function resolveRoles(myChoice, peerChoice, myServerRole) {
+  if (myChoice !== peerChoice) return myChoice;
+  // Both chose the same role — server join order is the tiebreaker
+  // (first joiner = driver, second = gunner)
+  return myServerRole;
+}
+
+function tryFinalizeRoles() {
+  if (!myConfirmed || !peerConfirmed || !myRolePref || !peerRolePref) return;
+  const finalRole = resolveRoles(myRolePref, peerRolePref, net.role);
+  net.role = finalRole;
+  roleStatusMsg.textContent = `Your role: ${finalRole.toUpperCase()}`;
+  setTimeout(() => {
+    hideRoleSelect();
+    loadSounds();
+    setSoundMuted(soundMuted);
+    screen = 'level_select';
+  }, 900);
+}
+
 function handleTitleKey(e) {
   if (e?.code === 'KeyM') {
     showLobby();
     return;
   }
-  screen = 'level_select';
-  loadSounds();
-  setSoundMuted(soundMuted); // sync mute state into audio module on first load
-  introAudio.play().catch(() => {});
+  if (e?.code === 'KeyS' || e?.code === 'Enter' || e?.code === 'Space') {
+    screen = 'level_select';
+    loadSounds();
+    setSoundMuted(soundMuted);
+    introAudio.play().catch(() => {});
+  }
 }
 
 function handleLevelSelectKey(e) {
   if (e.code === 'ArrowUp')   selectedLevel = Math.max(0, selectedLevel - 1);
   if (e.code === 'ArrowDown') selectedLevel = Math.min(LEVELS.length - 1, selectedLevel + 1);
-  if (e.code === 'Enter' || e.code === 'Space') startLevel(selectedLevel);
+  if (e.code === 'Enter' || e.code === 'Space') {
+    if (net.role === 'gunner' && net.ready) return; // gunner waits for driver
+    if (net.role === 'driver' && net.ready) {
+      sendMsg({ type: 'level_choice', level: selectedLevel });
+    }
+    startLevel(selectedLevel);
+  }
 }
 
 // ─── Multiplayer helpers ──────────────────────────────────────────────────────
@@ -788,10 +854,7 @@ function serializeState() {
   };
 }
 
-let _snapCount = 0;
 function applySnapshot(snap, dt) {
-  if (++_snapCount === 1) console.log('[gunner] first snapshot, tank at', snap.tank.x.toFixed(0), snap.tank.y.toFixed(0));
-
   stampTracks(tank, snap.tank.x, snap.tank.y, snap.tank.bodyAngle, dt);
   tank.x            = snap.tank.x;
   tank.y            = snap.tank.y;
@@ -861,7 +924,7 @@ function loop(timestamp) {
     return;
   }
 
-  if (screen === 'lobby') {
+  if (screen === 'lobby' || screen === 'role_select') {
     drawTitle();  // rendered behind the HTML overlay
     requestAnimationFrame(loop);
     return;
@@ -883,7 +946,6 @@ function loop(timestamp) {
       fire:  input.held('ArrowUp') || input.held('Space'),
     });
     input.clearPressed();
-    if (!net.snapshot && Math.random() < 0.01) console.log('[gunner] waiting for snapshot...');
     if (net.snapshot) applySnapshot(net.snapshot, dt);
 
   } else {
@@ -924,7 +986,6 @@ function loop(timestamp) {
 
     // Driver: broadcast authoritative state to gunner
     if (net.role === 'driver' && net.ready) {
-      if (!window._driverSent) { window._driverSent = true; console.log('[driver] sending first state'); }
       sendState(serializeState());
     }
   }
@@ -993,7 +1054,8 @@ async function init() {
   window.addEventListener('keydown', e => {
     if (screen === 'title')        { handleTitleKey(e); return; }
     if (screen === 'level_select') { handleLevelSelectKey(e); return; }
-    if (screen === 'lobby' && e.code === 'Escape') { hideLobby(); screen = 'title'; return; }
+    if (screen === 'lobby'       && e.code === 'Escape') { hideLobby(); screen = 'title'; return; }
+    if (screen === 'role_select' && e.code === 'Escape') { hideRoleSelect(); screen = 'title'; return; }
     if (screen === 'dead')         { screen = 'title'; return; }
   });
 
@@ -1028,19 +1090,64 @@ async function init() {
   });
 
   netOn('ready', () => {
-    statusEl.textContent = 'Both players connected! Starting…';
+    statusEl.textContent = 'Both players connected!';
     setTimeout(() => {
       hideLobby();
-      loadSounds();
-      setSoundMuted(soundMuted);
-      startLevel(selectedLevel);
-    }, 800);
+      showRoleSelect();
+    }, 600);
   });
 
   netOn('peer_disconnected', () => {
+    if (screen === 'role_select') { hideRoleSelect(); screen = 'title'; return; }
     statusEl.className = 'error';
     statusEl.textContent = 'Other player disconnected.';
     joinBtn.disabled = false;
+  });
+
+  // ── Role select button wiring ─────────────────────────────────────────────
+
+  function selectRole(role) {
+    myRolePref = role;
+    roleDriverBtn.classList.toggle('selected', role === 'driver');
+    roleGunnerBtn.classList.toggle('selected', role === 'gunner');
+    roleConfirmBtn.disabled = false;
+    sendMsg({ type: 'role_pref', role });
+  }
+
+  roleDriverBtn.addEventListener('click', () => selectRole('driver'));
+  roleGunnerBtn.addEventListener('click', () => selectRole('gunner'));
+
+  roleConfirmBtn.addEventListener('click', () => {
+    if (!myRolePref) return;
+    myConfirmed = true;
+    roleConfirmBtn.disabled = true;
+    roleDriverBtn.disabled = true;
+    roleGunnerBtn.disabled = true;
+    roleStatusMsg.textContent = peerConfirmed
+      ? 'Finalizing roles…'
+      : 'Waiting for other player to confirm…';
+    sendMsg({ type: 'role_confirm' });
+    tryFinalizeRoles();
+  });
+
+  netOn('role_pref', peerRole => {
+    peerRolePref = peerRole;
+    rolePeerDisp.textContent = `Other player: ${peerRole === 'driver' ? 'DRIVER' : 'GUNNER'}`;
+    tryFinalizeRoles();
+  });
+
+  netOn('role_confirm', () => {
+    peerConfirmed = true;
+    if (myConfirmed) {
+      roleStatusMsg.textContent = 'Finalizing roles…';
+    } else {
+      roleStatusMsg.textContent = 'Other player confirmed. Make your choice!';
+    }
+    tryFinalizeRoles();
+  });
+
+  netOn('level_choice', level => {
+    startLevel(level);
   });
 
   joinBtn.addEventListener('click', joinRoom);
