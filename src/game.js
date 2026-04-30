@@ -11,16 +11,22 @@ import { resolveProjectileHits } from './physics/collision.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
 
 function resize() {
-  const scaleX = window.innerWidth / WORLD_W;
+  const scaleX = window.innerWidth  / WORLD_W;
   const scaleY = window.innerHeight / WORLD_H;
   const scale  = Math.min(scaleX, scaleY);
-  canvas.width  = WORLD_W;
-  canvas.height = WORLD_H;
-  canvas.style.width  = `${WORLD_W * scale}px`;
-  canvas.style.height = `${WORLD_H * scale}px`;
+  const dpr    = window.devicePixelRatio || 1;
+
+  // Size canvas at physical pixels so 1 canvas px = 1 screen px (no stretching)
+  canvas.width  = Math.round(WORLD_W * scale * dpr);
+  canvas.height = Math.round(WORLD_H * scale * dpr);
+  canvas.style.width  = `${Math.round(WORLD_W * scale)}px`;
+  canvas.style.height = `${Math.round(WORLD_H * scale)}px`;
+
+  // Map game-space coordinates (0..WORLD_W) to physical canvas pixels
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
 }
 resize();
 window.addEventListener('resize', resize);
